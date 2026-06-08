@@ -1,0 +1,174 @@
+#+TITLE: Dockers
+
+This repository contains Docker images that I regularly use. There are also
+convenient aliases defined in [[./aliases.sh][aliases.sh]] and a [[./Makefile][Makefile]] to build the images.
+
+* base-* images
+
+These are the custom images that I use as base for other images. They contain
+useful small utilities like /tmux/, /nano/, /git/ and /curl/.
+
+- [[./base-alpine][base-alpine]]
+- [[./base-archlinux][base-archlinux]]
+- [[./base-debian][base-debian]]
+- [[./base-ubuntu][base-ubuntu]]
+
+* ad
+
+/nxc all the things/:
+
+- [[https://github.com/dirkjanm/BloodHound.py?][bloodhound.py]]
+- [[https://github.com/CravateRouge/bloodyAD][bloodyad]] and [[https://github.com/CravateRouge/autobloody][autobloody]]
+- [[https://github.com/Pennyw0rth/NetExec][netexec]]
+- [[https://github.com/fortra/impacket][impacket]]
+- [[https://github.com/topotam/PetitPotam][petitpotam]]
+- [[https://github.com/rofl0r/proxychains-ng][proxychains-ng]]
+
+Local /nxc/ data will be saved under the current directory in /.docker-ad-nxc/.
+
+#+begin_src shell
+alias ad-run='drunhere --network=host skw/ad '
+alias ad-runit='drunithere --network=host skw/ad '
+alias ad-shell='dshellhere --network=host skw/ad '
+alias bloodhound-ce-python='ad-runit bloodhound-ce-python '
+alias bloodhound-python='ad-runit bloodhound-python '
+alias certipy='ad-runit certipy '
+alias coercer='ad-runit coercer '
+alias nxc='drunithere -v `pwd`/.docker-ad-nxc:/root/.nxc --network=host skw/ad nxc '
+alias smbclient='ad-runit smbclient '
+alias smbserver='ad-run smbserver.py -smb2support '
+#+end_src
+
+* bloodhound
+
+Enable to runs multiple [[https://github.com/SpecterOps/BloodHound][BloudHound]] instances easily. Each instance will store
+its Postgres and Neo4J data in the current directory. Defaults can be customized
+via the [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env][.env]] files.
+
+#+begin_src shell
+bloodhound-run() {
+    #   cd ~/projectA && bloodhound-run
+    #   cd ~/projectB && bloodhound-run projectb 8712 7475 7688
+
+    CONTAINER_NAME="$(basename $(pwd) | tr -dc '0-9a-z')"
+    unset BLOODHOUND_PORT
+    unset NEO4J_WEB_PORT
+    unset NEO4J_DB_PORT
+
+    [[ $# -gt 0 ]] && { CONTAINER_NAME="$1"; shift; }
+    [[ $# -gt 0 ]] && { export BLOODHOUND_PORT="$1"; shift; }
+    [[ $# -gt 0 ]] && { export NEO4J_WEB_PORT="$1"; shift; }
+    [[ $# -gt 0 ]] && { export NEO4J_DB_PORT="$1"; shift; }
+
+    export POSTGRES_DATA_MOUNT="$(pwd)/.docker-bh-postgres"
+    export NEO4J_DATA_MOUNT="$(pwd)/.docker-bh-neo4j"
+    docker-compose -p "${CONTAINER_NAME}" -f "$(dirname -- ${BASH_SOURCE[0]})/bloodhound/docker-compose.yml" up
+
+    unset BLOODHOUND_PORT
+    unset NEO4J_WEB_PORT
+    unset NEO4J_DB_PORT
+    unset POSTGRES_DATA_MOUNT
+    unset NEO4J_DATA_MOUNT
+}
+#+end_src
+
+* forensic
+
+Contains a few forensic and stegano tools as well as custom volatility [[./forensic/symbols][symbols]].
+
+- [[https://github.com/1sis/Angecryption][angecryption]]
+- [[https://github.com/ReFirmLabs/binwalk][binwalk]]
+- [[https://github.com/ANSSI-FR/bmc-tools/][bmc-tools]]
+- [[https://github.com/DonnchaC/coldboot-attacks][coldboot attacks]]
+- [[https://exiftool.org/][exiftool]]
+- [[https://github.com/korczis/foremost][foremost]]
+- [[https://github.com/matro7sh/keepass-dump-masterkey][keepass-dump-masterkey]]
+- [[https://github.com/skelsec/minidump][minidump]]
+- [[https://github.com/volatilityfoundation/volatility3][volatility3]]
+
+* http-server
+
+Basic HTTP(S) Python [[https://pypi.org/project/uploadserver/][uploadserver]]. It serves the volume mounted under //work/ on
+the specified port (default /8000/) and provides file upload via
+http://ip:8000/upload.
+
+#+begin_src shell
+alias http-server='docker run --rm -it -v `pwd`:/work --network=host skw/http-server '
+alias https-server='http-server --server-certificate /etc/ssl/private/server.pem '
+#+end_src
+
+* java-env
+
+This image is based on *archlinux-base* and offers several versions of the JDK
+and JRE as well as some other common tools:
+
+- [[https://github.com/unsynchronized/jdeserialize][jdeserialize]]
+- [[https://github.com/mbechler/marshalsec][marshalsec]]
+- [[https://github.com/frohoff/ysoserial][ysoserial]]
+
+  #+begin_src shell
+alias jdeserialize='drunhere skw/java-env jdeserialize '
+alias marshalsec='drunhere skw/java-env marshalsec '
+alias ysoserial='drunhere skw/java-env ysoserial '
+  #+end_src
+
+* php-env
+
+A standard PHP installation (latest version in the repositories) of Ubuntu with
+some additional PHP utilities (/libsodium/).
+
+* pwn
+
+Various pwn tools and python libs for CTF:
+
+- [[https://github.com/Gallopsled/pwntools][pwntools]]
+- [[https://github.com/pwndbg/pwndbg][gdb-pwndbg]]
+- [[https://github.com/bata24/gef][gdb-gef]] (bata24's fork)
+- [[https://github.com/mahaloz/decomp2dbg][decomp2dbg]]
+- [[https://github.com/jerdna-regeiz/splitmind][splitmind]]
+- [[https://github.com/io12/pwninit][pwninit]]
+- [[https://angr.io/][angr.io]]
+- [[https://github.com/Z3Prover/z3][z3]]
+- [[https://www.sagemath.org/][sagemath]]
+
+Make sure to check out what [[https://github.com/nobodyisnobody/tools][nobodyisnobody]] implemented and thank him for the
+great work!
+
+* recon
+
+The following tools are installed:
+
+- [[https://github.com/owasp-amass/amass][amass]]
+- [[https://github.com/lc/gau][gau]]
+- [[https://github.com/sensepost/gowitness][gowitness]]
+- [[https://github.com/projectdiscovery/httpx][httpx]]
+- [[https://github.com/blechschmidt/massdns][massdns]]
+- [[https://github.com/projectdiscovery/subfinder][subfinder]]
+- [[https://github.com/tomnomnom/unfurl][unfurl]]
+
+The script [[./recon/scripts/gimmesubs.sh][gimmesubs.sh]] performs recursive subdomain enumeration using passive
+sources, custom wordlists and brute-force.
+
+* semgrep
+
+Docker installation of [[https://github.com/semgrep/semgrep][semgrep's]] cli with support for the pro version. If you do
+not wish to install the pro version, comment out the corresponding line in the
+[[./semgrep/Dockerfile][Dockerfile]]. Otherwise the /semgrep/ cli will prompt for login during the
+building of the image.
+
+#+begin_src shell
+alias semgrep='drunithere --entrypoint semgrep skw/semgrep '
+alias semgrep-pro-scan='semgrep scan --pro --dataflow-traces --max-lines-per-finding=0 --max-target-bytes=5000000 --time '
+alias semgrep-shell='drunithere --entrypoint /bin/bash skw/semgrep '
+#+end_src
+
+* vsftpd
+
+Exposes a FTP server via [[https://security.appspot.com/vsftpd.html][vsftpd]] on port 21 (and ports 3000-3009 for passive
+mode). It serves the directory mounted as //home/ftpuser/, /FTP_USER/ and
+/FTP_PASS/ can be passed as environment variables. The /vsftpd/ configuration
+can be further edited in [[./vsftpd/entrypoint.sh][entrypoint.sh]].
+
+#+begin_src shell
+docker run --rm --network=host -v `pwd`:/home/ftpuser -e FTP_USER=skw -e FTP_PASS=foobar skw/vsftpd
+#+end_src

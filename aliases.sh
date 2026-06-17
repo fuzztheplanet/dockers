@@ -107,6 +107,7 @@ vsftpd() {
 }
 
 # Misc software / scripts
+alias evil-winrm='drunit -v `pwd`:/data --network=host oscarakaelvis/evil-winrm'
 alias mobsf='drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest '
 alias sonarqube='drun -p 7022:9000 sonarqube:latest '
-alias evil-winrm='drunit -v `pwd`:/data --network=host oscarakaelvis/evil-winrm'
+alias unblob='drunhere -v `pwd`:/data -w /data -u $UID:$GID ghcr.io/onekey-sec/unblob:latest '

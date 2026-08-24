@@ -1,0 +1,22 @@
+# Keep build context small and free of secrets. The build context is the repo
+# root (`docker build ... .`), shared by every image, so exclude everything no
+# Dockerfile COPYs plus anything sensitive.
+.git
+.gitignore
+.dockerignore
+
+# Docs
+*.md
+*.org
+**/*.org
+
+# Local helpers / env — never needed inside an image, and may hold secrets
+aliases.sh
+**/.env
+**/*.example
+common/*.default
+
+# Editor / OS cruft
+**/.DS_Store
+**/*.swp
+**/*~

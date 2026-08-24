@@ -40,7 +40,7 @@ RUN pip install --break-system-packages --upgrade \
 
 # Install pwndbg
 RUN cd /root/tools && \
-    git clone https://github.com/pwndbg/pwndbg && \
+    git clone --depth 1 https://github.com/pwndbg/pwndbg && \
     cd pwndbg && echo n | ./setup.sh && \
     cd /root/tools
 
@@ -50,19 +50,19 @@ RUN mkdir /root/tools/gef && \
     cd /root/tools
 
 # Install dcomp2dbg
-RUN cd /root/tools && git clone https://github.com/mahaloz/decomp2dbg.git && \
+RUN cd /root/tools && git clone --depth 1 https://github.com/mahaloz/decomp2dbg.git && \
     cd decomp2dbg && \
     pip install --break-system-packages . && python setup.py install
 
 # Install rappel
-RUN cd /root/tools && git clone https://github.com/yrp604/rappel && \
+RUN cd /root/tools && git clone --depth 1 https://github.com/yrp604/rappel && \
     cd rappel && make && cp bin/rappel /usr/local/bin/rappel
 
 # Install splitmind
-RUN cd /root/tools && git clone https://github.com/jerdna-regeiz/splitmind
+RUN cd /root/tools && git clone --depth 1 https://github.com/jerdna-regeiz/splitmind
 
 # Install libc-database
-RUN cd /root/tools && git clone https://github.com/niklasb/libc-database
+RUN cd /root/tools && git clone --depth 1 https://github.com/niklasb/libc-database
 
 # Copy local scripts
 COPY pwn/files/gdbinit /root/.gdbinit

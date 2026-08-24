@@ -278,10 +278,12 @@ validate_resolvers() {
     shuf -n "$probe" "$src" 2>/dev/null \
         | xargs -P "$PROBE_PARALLEL" -I{} bash -c '
             ip="$1"; t0=$EPOCHREALTIME
-            dig +short +tries=1 +time=2 "$VALIDATE_POS" A "@$ip" 2>/dev/null \
+            printf "%s\n" "$VALIDATE_POS" \
+                | dnsx -r "$ip" -a -resp-only -silent -retry 1 -timeout 2 2>/dev/null \
                 | grep -qE "^[0-9]+\." || exit 0
             t1=$EPOCHREALTIME
-            dig +short +tries=1 +time=2 "$VALIDATE_NEG" A "@$ip" 2>/dev/null \
+            printf "%s\n" "$VALIDATE_NEG" \
+                | dnsx -r "$ip" -a -resp-only -silent -retry 1 -timeout 2 2>/dev/null \
                 | grep -qE "^[0-9]+\." && exit 0
             awk -v a="$t0" -v b="$t1" -v ip="$ip" "BEGIN { printf \"%d %s\\n\", (b - a) * 1000, ip }"
           ' _ {} 2>/dev/null \
@@ -322,17 +324,20 @@ prepare_resolvers() {
 prepare_auth_resolvers() {
     local domain="$1"
     local ns_ips="$TMP_DIR/auth-resolvers.txt"
-    dig +short NS "$domain" 2>/dev/null | sed 's/\.$//' \
-        | while read -r ns; do
-              [[ -n "$ns" ]] || continue
-              dig +short A "$ns" 2>/dev/null | grep -aE '^[0-9]+\.'
-          done | sort -u > "$ns_ips.all" || true
+    # NS names for the zone, then resolve each to an A record. dnsx handles both
+    # the NS query and the A resolution (piped), using the trusted resolver pool.
+    printf '%s\n' "$domain" \
+        | dnsx -r "$RESOLVERS_TRUSTED" -ns -resp-only -silent 2>/dev/null | sed 's/\.$//' \
+        | dnsx -r "$RESOLVERS_TRUSTED" -a -resp-only -silent 2>/dev/null \
+        | grep -aE '^[0-9]+\.' | sort -u > "$ns_ips.all" || true
 
     : > "$ns_ips"
     while read -r ip; do
         [[ -n "$ip" ]] || continue
         # skip NS hosts that do not answer
-        dig +short +tries=1 +time=3 "$domain" A "@$ip" 2>/dev/null | grep -qaE '^[0-9]+\.' || continue
+        printf '%s\n' "$domain" \
+            | dnsx -r "$ip" -a -resp-only -silent -retry 1 -timeout 3 2>/dev/null \
+            | grep -qaE '^[0-9]+\.' || continue
         printf '%s\n' "$ip" >> "$ns_ips"
     done < "$ns_ips.all"
     rm -f "$ns_ips.all"
@@ -1009,7 +1014,7 @@ main() {
     # massdns needs one fd per in-flight query
     ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 
-    require curl jq sort comm awk shuf dig dnsx tlsx
+    require curl jq sort comm awk shuf dnsx tlsx
     [[ "$MODE" == active ]] && require massdns puredns
 
     if [[ "$WORDLIST_IS_DIR" == true ]]; then

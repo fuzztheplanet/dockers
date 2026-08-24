@@ -23,7 +23,7 @@ RUN curl -o /usr/local/bin/bmc-tools.py \
     && chmod +x /usr/local/bin/bmc-tools.py
 
 # coldboot attacks (aesfix & aeskeyfind)
-RUN git clone https://github.com/DonnchaC/coldboot-attacks /root/tools/coldboot-attacks && \
+RUN git clone --depth 1 https://github.com/DonnchaC/coldboot-attacks /root/tools/coldboot-attacks && \
     cd /root/tools/coldboot-attacks && find . -type f -name '*.tar.gz' -exec tar zxvf {} \; && \
     cd aesfix && make && cd .. && \
     cd aeskeyfind && make && cd .. && \

@@ -24,13 +24,13 @@ RUN pipx upgrade-all && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 pipx install \
 RUN mkdir /root/tools
 
 # Responder
-RUN git clone https://github.com/lgandx/responder /root/tools/responder && \
+RUN git clone --depth 1 https://github.com/lgandx/responder /root/tools/responder && \
     cd /root/tools/responder && \
     pip install --break-system-packages -r requirements.txt
 ENV PATH="$PATH:/root/tools/responder"
 
 # PetitPotam
-RUN git clone https://github.com/topotam/PetitPotam /root/tools/petitpotam && \
+RUN git clone --depth 1 https://github.com/topotam/PetitPotam /root/tools/petitpotam && \
     chmod +x /root/tools/petitpotam/PetitPotam.py
 ENV PATH="$PATH:/root/tools/petitpotam"
 

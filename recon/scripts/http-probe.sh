@@ -38,7 +38,7 @@ ARGUMENTS
                          (https://x, x:8443); those are honoured as given.
     [ports]              Comma-separated HTTP(S) ports to try on hosts that have
                          no port of their own. Positional or -p.
-                         Default: 80,81,82,83,84,88,443,444,800,801,808,8000,8001,8002,8003,8004,8008,8009,8010,8080,8081,8082,8083,8084,8085,8086,8087,8088,8089,8090,8091,8092,8443,8444,8445,8446,8880,8888,8889,8043
+                         Default: 80,443,444,8000,8001,8008,8009,8010,8080,8081,8082,8088,8089,8090,8091,8443,8444,8445,8880,8888,8889,8043
 
 OPTIONS
     -p, --ports <list>   Ports to probe                 (default: as above)

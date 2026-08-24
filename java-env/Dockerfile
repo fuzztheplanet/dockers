@@ -6,7 +6,7 @@ RUN mkdir /root/tools
 RUN pacman --noconfirm -S jdk-openjdk jdk8-openjdk maven ant
 
 # Marshalsec
-RUN git clone https://github.com/mbechler/marshalsec/ /root/tools/marshalsec && \
+RUN git clone --depth 1 https://github.com/mbechler/marshalsec/ /root/tools/marshalsec && \
     cd /root/tools/marshalsec && \
     archlinux-java set java-8-openjdk && \
     mvn clean package -DskipTests && \
@@ -16,7 +16,7 @@ RUN git clone https://github.com/mbechler/marshalsec/ /root/tools/marshalsec && 
     chmod +x /usr/local/bin/marshalsec
 
 # Ysoserial
-RUN git clone https://github.com/frohoff/ysoserial /root/tools/ysoserial && \
+RUN git clone --depth 1 https://github.com/frohoff/ysoserial /root/tools/ysoserial && \
     cd /root/tools/ysoserial && \
     mvn clean package -DskipTests && \
     rm -rf ~/.m2/repository && \
@@ -25,7 +25,7 @@ RUN git clone https://github.com/frohoff/ysoserial /root/tools/ysoserial && \
     chmod +x /usr/local/bin/ysoserial
 
 # JDeserialize
-RUN git clone https://github.com/unsynchronized/jdeserialize /root/tools/jdeserialize && \
+RUN git clone --depth 1 https://github.com/unsynchronized/jdeserialize /root/tools/jdeserialize && \
     cd /root/tools/jdeserialize/jdeserialize && \
     ant compile && ant build-jar && \
     echo '#!/usr/bin/env bash ' > /usr/local/bin/jdeserialize && \

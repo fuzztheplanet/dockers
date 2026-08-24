@@ -1,0 +1,7 @@
+# Minimal default tmux.conf baked into skw/* images when the build host has no
+# ~/.config/tmux/tmux.conf to copy.
+set -g mouse on
+set -g history-limit 50000
+set -g base-index 1
+setw -g pane-base-index 1
+set -g default-terminal "tmux-256color"

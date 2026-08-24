@@ -1,0 +1,10 @@
+# Minimal default bashrc baked into skw/* images when the build host has no
+# ~/.bashrc to copy. Drop your own ~/.bashrc in place before `make` to override.
+[ -z "$PS1" ] && return
+export HISTSIZE=10000 HISTFILESIZE=20000 HISTCONTROL=ignoreboth
+shopt -s checkwinsize histappend 2>/dev/null
+alias ls='ls --color=auto'
+alias ll='ls -alF'
+alias la='ls -A'
+alias grep='grep --color=auto'
+PS1='\[\e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '

@@ -43,7 +43,10 @@ RUN go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/assetfinder@latest
 
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/d3mondev/puredns/v2@latest
 
-FROM skw/base-debian AS runtime
+# Slim base directly (not skw/base-debian): recon is a headless tool runtime and
+# installs its own runtime deps below, so it doesn't need the interactive dev
+# base (git/perl/locales/tmux/nano) — that would add ~150MB it never uses.
+FROM debian:12-slim AS runtime
 
 LABEL org.opencontainers.image.title="recon" \
       org.opencontainers.image.description="recon tools: gimmesubs (subdomain enumeration), http-probe (HTTP service discovery), nuclei-auto (nuclei scanning)"
@@ -55,8 +58,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     OUTPUT_DIR=/work \
     HOME=/root
 
+# Runtime deps only. No bind9-dnsutils: gimmesubs uses dnsx (below) for all DNS
+# queries instead of dig, which drops libxml2 -> libicu72 (~36MB) from the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl jq bind9-dnsutils tzdata \
+        ca-certificates curl jq tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/bin/ /usr/local/bin/

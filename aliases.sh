@@ -1,8 +1,8 @@
 # Aliases for common docker commands
 alias drun='docker run --rm '
-alias drunhere='drun -v `pwd`:/work -w /work '
+alias drunhere='drun -v "$(pwd):/work" -w /work '
 alias drunit='drun -it '
-alias drunithere='drunit -v `pwd`:/work -w /work '
+alias drunithere='drunit -v "$(pwd):/work" -w /work '
 alias dshell='drunit --entrypoint=/bin/bash '
 alias dshellhere='drunithere --entrypoint=/bin/bash '
 
@@ -37,13 +37,13 @@ alias bloodhound-ce-python='ad-runit bloodhound-ce-python '
 alias bloodhound-python='ad-runit bloodhound-python '
 alias certipy='ad-runit certipy '
 alias coercer='ad-runit coercer '
-alias nxc='drunithere -v `pwd`/.docker-ad-nxc:/root/.nxc --network=host skw/ad nxc '
-alias responder='drunithere -v `pwd`/.docker-ad-responder:/root/tools/responder/logs skw/ad Responder.py '
+alias nxc='drunithere -v "$(pwd)/.docker-ad-nxc:/root/.nxc" --network=host skw/ad nxc '
+alias responder='drunithere -v "$(pwd)/.docker-ad-responder:/root/tools/responder/logs" skw/ad Responder.py '
 alias smbclient='ad-runit smbclient '
 alias smbserver='ad-run smbserver.py -smb2support '
 
 petitpotam() {
-    ad-shell -c ". /root/.local/share/pipx/venvs/impacket/bin/activate; PetitPotam.py $@"
+    ad-shell -c '. /root/.local/share/pipx/venvs/impacket/bin/activate; PetitPotam.py "$@"' _ "$@"
 }
 
 
@@ -52,7 +52,7 @@ bloodhound-run() {
     #   cd ~/projectA && bloodhound-run
     #   cd ~/projectB && bloodhound-run projectb 8712 7475 7688
 
-    CONTAINER_NAME="$(basename $(pwd) | tr -dc '0-9a-z')"
+    CONTAINER_NAME="$(basename "$(pwd)" | tr -dc '0-9a-z')"
     unset BLOODHOUND_PORT
     unset NEO4J_WEB_PORT
     unset NEO4J_DB_PORT
@@ -282,7 +282,7 @@ vsftpd() {
 }
 
 # Misc software / scripts
-alias evil-winrm='drunit -v `pwd`:/data --network=host oscarakaelvis/evil-winrm'
+alias evil-winrm='drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm'
 alias mobsf='drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest '
 alias sonarqube='drun -p 7022:9000 sonarqube:latest '
-alias unblob='drunhere -v `pwd`:/data -w /data -u $UID:$GID ghcr.io/onekey-sec/unblob:latest '
+alias unblob='drunhere -v "$(pwd):/data" -w /data -u $UID:$GID ghcr.io/onekey-sec/unblob:latest '

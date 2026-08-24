@@ -1,5 +1,7 @@
 common/bashrc
 common/tmux.conf
 
+bloodhound/.env
+
 recon/.env
 recon/config/subfinder-provider-config.yaml

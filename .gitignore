@@ -1,2 +1,5 @@
 common/bashrc
 common/tmux.conf
+
+recon/.env
+recon/config/subfinder-provider-config.yaml

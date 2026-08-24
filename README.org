@@ -136,18 +136,50 @@ great work!
 
 * recon
 
-The following tools are installed:
+This image bundles some reconnaissance tools and scripts.
 
-- [[https://github.com/owasp-amass/amass][amass]]
+- [[https://github.com/projectdiscovery/alterx][alterx]]
+- [[https://github.com/tomnomnom/assetfinder][assetfinder]]
+- [[https://github.com/projectdiscovery/dnsx][dnsx]]
 - [[https://github.com/lc/gau][gau]]
-- [[https://github.com/sensepost/gowitness][gowitness]]
 - [[https://github.com/projectdiscovery/httpx][httpx]]
 - [[https://github.com/blechschmidt/massdns][massdns]]
+- [[https://github.com/projectdiscovery/nuclei][nuclei]]
+- [[https://github.com/d3mondev/puredns][puredns]]
 - [[https://github.com/projectdiscovery/subfinder][subfinder]]
-- [[https://github.com/tomnomnom/unfurl][unfurl]]
+- [[https://github.com/projectdiscovery/tlsx][tlsx]]
 
-The script [[./recon/scripts/gimmesubs.sh][gimmesubs.sh]] performs recursive subdomain enumeration using passive
-sources, custom wordlists and brute-force.
+It also provides the scripts /gimmesubs.sh/, /http-probe.sh/, /nuclei-auto.sh/
+as well as /recon.sh/ which runs all previous 3.
+
+This builds the image and loads the commands (=recon=, =gimmesubs=, =http-probe=,
+=nuclei-auto=, =subs2web= are shell functions from [[./aliases.sh][aliases.sh]]):
+
+#+begin_src shell
+source aliases.sh
+make recon
+
+cd ~/engagements/acme
+
+recon acme.com ~/lists/big.txt                 # subdomain enumeration for acme.me
+                                               # then identify http servers and
+                                               # scan them with nuclei
+recon --http acme.com ~/lists/big.txt 80,443   # stop after http-probe on port 80 443
+recon --subdomains acme.com ~/lists/big.txt    # only subdomains
+
+# the stages are standalone commands too
+gimmesubs -p acme.com
+http-probe acme.com_*/subdomains.txt
+nuclei-auto http-probe_*/live.txt
+#+end_src
+
+To run the image directly, without the wrapper functions (/massdns/ will need a
+lot of ports):
+
+#+begin_src shell
+alias recon-run='drunithere --ulimit nofile=65535:65535 --sysctl "net.ipv4.ip_local_port_range=10000 65535" skw/recon '
+alias recon-shell='dshellhere skw/recon '
+#+end_src
 
 * semgrep
 

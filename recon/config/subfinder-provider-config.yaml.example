@@ -1,0 +1,32 @@
+# Copy to config/subfinder-provider-config.yaml and fill in what you have.
+# Docs: https://docs.projectdiscovery.io/tools/subfinder/install#post-install-configuration
+
+securitytrails: []
+shodan: []
+censys: []           # format: "APP_ID:SECRET"
+virustotal: []
+github: []           # personal access tokens, no scopes needed
+gitlab: []
+chaos: []
+bevigil: []
+binaryedge: []
+bufferover: []
+builtwith: []
+c99: []
+certspotter: []
+chinaz: []
+dnsdb: []
+dnsrepo: []
+fofa: []             # format: "EMAIL:KEY"
+fullhunt: []
+hunter: []
+intelx: []           # format: "HOST:KEY"
+leakix: []
+netlas: []
+passivetotal: []     # format: "USER:KEY"
+quake: []
+redhuntlabs: []      # format: "URL:KEY"
+robtex: []
+whoisxmlapi: []
+zoomeyeapi: []
+facebook: []         # format: "APP_ID:SECRET"

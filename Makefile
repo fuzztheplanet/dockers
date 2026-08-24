@@ -13,7 +13,7 @@ http-server:
 java-env:         base-archlinux
 php-env:          base-ubuntu
 pwn:              base-archlinux
-recon:            base-archlinux
+recon:            base-debian
 semgrep:
 vsftpd:           base-alpine
 

@@ -1,10 +1,11 @@
 ﻿FROM skw/base-archlinux
 
 # Arch Packages
-RUN pacman --noconfirm -S base-devel \
+RUN pacman --noconfirm -Syu base-devel \
     binwalk foremost volatility3 \
     perl-image-exiftool \
     libewf \
+    wireshark-cli \
     python-minidump && \
     pacman --noconfirm -Scc && pacman --noconfirm -Sc
 
@@ -12,7 +13,7 @@ RUN pacman --noconfirm -S base-devel \
 RUN mkdir /root/tools
 
 # angecryption.py
-RUN pacman --noconfirm -S python-pycryptodome python-termcolor \
+RUN pacman --noconfirm -Syu python-pycryptodome python-termcolor \
     && curl -o /usr/local/bin/angecryption.py \
     https://raw.githubusercontent.com/1sis/Angecryption/refs/heads/main/angecryption.py \
     && chmod +x /usr/local/bin/angecryption.py
@@ -37,6 +38,14 @@ RUN curl -o /usr/local/bin/keepass-dump-masterkey.py \
 
 # Copy custom volatility symbols
 COPY forensic/symbols /symbols
+
+# Link the symbols to volatility3's own search path
+RUN S="$(python -c 'import volatility3, os; print(os.path.join(os.path.dirname(volatility3.__file__), "symbols"))')" \
+    && mkdir -p "$S/linux" \
+    && ln -s /symbols/linux/*.json.xz "$S/linux/"
+
+# Add perl scripts (exiftool, ...) to $PATH
+ENV PATH="/usr/bin/vendor_perl:/usr/bin/site_perl:/usr/bin/core_perl:${PATH}"
 
 # Set workdir
 WORKDIR /work

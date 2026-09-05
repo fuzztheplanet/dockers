@@ -1,0 +1,52 @@
+#!/bin/sh
+# Bootstrap a pwn challenge working directory: copy the solve.py and utils.py
+# templates shipped in the image into the current directory (default) or into
+# the directory given as the first argument. With -s, also copy the solver
+# skeletons (angr / z3 / sage).
+#
+# Usage:
+#   pwn-init                # copy solve.py + utils.py into $PWD
+#   pwn-init <dir>          # copy them into <dir> (created if missing)
+#   pwn-init -f [dir]       # overwrite existing files
+#   pwn-init -s [dir]       # also copy angr_solve.py, z3_solve.py, sage_solve.py
+#   pwn-init -f -s [dir]    # both
+
+set -eu
+
+TEMPLATE_DIR="/root/scripts"
+FORCE=0
+SOLVERS=0
+
+# Parse leading -f / -s flags (in any order).
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f) FORCE=1; shift ;;
+        -s) SOLVERS=1; shift ;;
+        --) shift; break ;;
+        -*) echo "unknown option: $1" >&2; exit 2 ;;
+        *) break ;;
+    esac
+done
+
+DEST="${1:-.}"
+mkdir -p "$DEST"
+
+FILES="solve.py utils.py"
+if [ "$SOLVERS" -eq 1 ]; then
+    FILES="$FILES angr_solve.py z3_solve.py sage_solve.py"
+fi
+
+for f in $FILES; do
+    src="$TEMPLATE_DIR/$f"
+    dst="$DEST/$f"
+    if [ -e "$dst" ] && [ "$FORCE" -ne 1 ]; then
+        echo "skip: $dst already exists (use -f to overwrite)"
+        continue
+    fi
+    cp "$src" "$dst"
+    echo "created: $dst"
+done
+
+chmod +x "$DEST/solve.py" 2>/dev/null || true
+
+echo "Ready. Edit solve.py, set BINARY/HOST/PORT, then run:  python3 solve.py"

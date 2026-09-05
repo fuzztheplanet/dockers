@@ -1,7 +1,12 @@
 #+TITLE: Dockers
 
-This repository contains Docker images that I regularly use. There are also
-convenient aliases defined in [[./aliases.sh][aliases.sh]] and a [[./Makefile][Makefile]] to build the images.
+This repository contains Docker images that I regularly use. [[./Makefile][Makefile]] builds the
+images and [[./aliases.sh][aliases.sh]] defines the shell functions that drive them.
+
+#+begin_src shell
+source aliases.sh   # bash only — it uses BASH_SOURCE
+make                # every image, or: make <image>
+#+end_src
 
 * base-* images
 
@@ -26,18 +31,11 @@ useful small utilities like /tmux/, /nano/, /git/ and /curl/.
 
 Local /nxc/ data will be saved under the current directory in /.docker-ad-nxc/.
 
-#+begin_src shell
-alias ad-run='drunhere --network=host skw/ad '
-alias ad-runit='drunithere --network=host skw/ad '
-alias ad-shell='dshellhere --network=host skw/ad '
-alias bloodhound-ce-python='ad-runit bloodhound-ce-python '
-alias bloodhound-python='ad-runit bloodhound-python '
-alias certipy='ad-runit certipy '
-alias coercer='ad-runit coercer '
-alias nxc='drunithere -v `pwd`/.docker-ad-nxc:/root/.nxc --network=host skw/ad nxc '
-alias smbclient='ad-runit smbclient '
-alias smbserver='ad-run smbserver.py -smb2support '
-#+end_src
+Commands: =ad-run=, =ad-runit=, =ad-shell= for the container itself, plus the
+wrappers =bloodhound-python=, =bloodhound-ce-python=, =certipy=, =coercer=, =nxc=,
+=petitpotam=, =responder=, =smbclient= and =smbserver=.
+
+/responder/ logs are saved under the current directory in /.docker-ad-responder/.
 
 * bloodhound
 
@@ -46,31 +44,11 @@ its Postgres and Neo4J data in the current directory. Defaults can be customized
 via the [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env][.env]] files.
 
 #+begin_src shell
-bloodhound-run() {
-    #   cd ~/projectA && bloodhound-run
-    #   cd ~/projectB && bloodhound-run projectb 8712 7475 7688
-
-    CONTAINER_NAME="$(basename $(pwd) | tr -dc '0-9a-z')"
-    unset BLOODHOUND_PORT
-    unset NEO4J_WEB_PORT
-    unset NEO4J_DB_PORT
-
-    [[ $# -gt 0 ]] && { CONTAINER_NAME="$1"; shift; }
-    [[ $# -gt 0 ]] && { export BLOODHOUND_PORT="$1"; shift; }
-    [[ $# -gt 0 ]] && { export NEO4J_WEB_PORT="$1"; shift; }
-    [[ $# -gt 0 ]] && { export NEO4J_DB_PORT="$1"; shift; }
-
-    export POSTGRES_DATA_MOUNT="$(pwd)/.docker-bh-postgres"
-    export NEO4J_DATA_MOUNT="$(pwd)/.docker-bh-neo4j"
-    docker-compose -p "${CONTAINER_NAME}" -f "$(dirname -- ${BASH_SOURCE[0]})/bloodhound/docker-compose.yml" up
-
-    unset BLOODHOUND_PORT
-    unset NEO4J_WEB_PORT
-    unset NEO4J_DB_PORT
-    unset POSTGRES_DATA_MOUNT
-    unset NEO4J_DATA_MOUNT
-}
+cd ~/projectA && bloodhound-run                          # ports 8111 / 7474 / 7687
+cd ~/projectB && bloodhound-run projectb 8712 7475 7688  # name, then custom ports
 #+end_src
+
+Each instance is its own =docker compose= project, so several can run side by side.
 
 * forensic
 
@@ -87,6 +65,9 @@ Contains a few forensic and stegano tools as well as custom volatility [[./foren
 - [[https://github.com/volatilityfoundation/volatility3][volatility3]]
 - [[https://www.wireshark.org/docs/man-pages/tshark.html][wireshark-cli]]
 
+Commands: =forensic-run=, =forensic-runit=, =forensic-shell=, and =volatility=
+(/vol/ with the bundled symbols already on its search path).
+
 * http-server
 
 Basic HTTP(S) Python [[https://pypi.org/project/uploadserver/][uploadserver]]. It serves the volume mounted under //work/ on
@@ -94,8 +75,9 @@ the specified port (default /8000/) and provides file upload via
 http://ip:8000/upload.
 
 #+begin_src shell
-alias http-server='docker run --rm -it -v `pwd`:/work --network=host skw/http-server '
-alias https-server='http-server --server-certificate /etc/ssl/private/server.pem '
+http-server          # serves $(pwd) on :8000, uploads at /upload
+http-server 9001     # another port
+https-server         # same over TLS, with the certificate baked into the image
 #+end_src
 
 * java-env
@@ -107,11 +89,8 @@ and JRE as well as some other common tools:
 - [[https://github.com/mbechler/marshalsec][marshalsec]]
 - [[https://github.com/frohoff/ysoserial][ysoserial]]
 
-  #+begin_src shell
-alias jdeserialize='drunhere skw/java-env jdeserialize '
-alias marshalsec='drunhere skw/java-env marshalsec '
-alias ysoserial='drunhere skw/java-env ysoserial '
-  #+end_src
+Commands: =jdeserialize=, =marshalsec=, =ysoserial= — each runs against the
+current directory.
 
 * php-env
 
@@ -127,10 +106,52 @@ Various pwn tools and python libs for CTF:
 - [[https://github.com/bata24/gef][gdb-gef]] (bata24's fork)
 - [[https://github.com/mahaloz/decomp2dbg][decomp2dbg]]
 - [[https://github.com/jerdna-regeiz/splitmind][splitmind]]
-- [[https://github.com/io12/pwninit][pwninit]]
+- [[https://github.com/yrp604/rappel][rappel]]
+- [[https://github.com/david942j/one_gadget][one_gadget]]
+- [[https://github.com/david942j/seccomp-tools][seccomp-tools]]
+- [[https://github.com/0vercl0k/rp][rp-lin]] (rp++)
+- [[https://github.com/niklasb/libc-database][libc-database]]
+- [[https://github.com/marin-m/vmlinux-to-elf][vmlinux-to-elf]]
 - [[https://angr.io/][angr.io]]
 - [[https://github.com/Z3Prover/z3][z3]]
 - [[https://www.sagemath.org/][sagemath]]
+
+Commands: =pwn-run=, =pwn-runit=, =pwn-shell=. Inside the image, =gdb-pwndbg=
+and =gdb-gef= start /gdb/ with the corresponding plugin; the bundled [[./pwn/files/gdbinit][gdbinit]]
+also defines =openredir <file>= to redirect the inferior's stdin/stdout/stderr
+to a file.
+
+The image also ships a =pwn-init= command and two templates ([[./pwn/scripts/solve.py][solve.py]] and
+[[./pwn/scripts/utils.py][utils.py]]) to bootstrap a challenge. =pwn-init= copies both into the current
+directory (the mounted //work/), which is the first step for any challenge:
+
+#+begin_src shell
+pwn-shell                 # interactive shell, $(pwd) mounted at /work
+pwn-init                  # drop solve.py + utils.py in the working directory
+                          # pwn-init <dir>  targets another directory
+                          # pwn-init -f     overwrites existing files
+                          # pwn-init -s     also copy the solver skeletons
+#+end_src
+
+Edit /solve.py/ (set =BINARY=, =GDB=, =HOST=/=PORT= and =SSH_*= as appropriate.
+
+#+begin_src shell
+python3 solve.py          # run the binary locally
+python3 solve.py GDB      # run locally under pwndbg
+python3 solve.py REMOTE   # connect to HOST:PORT over TCP
+python3 solve.py SSH      # run the challenge on the remote box over ssh
+python3 solve.py SSH GDB  # debug it on the remote box via gdbserver
+#+end_src
+
+With =-s=, =pwn-init= also copies three solver skeletons: [[./pwn/scripts/angr_solve.py][angr_solve.py]],
+[[./pwn/scripts/z3_solve.py][z3_solve.py]] and [[./pwn/scripts/sage_solve.py][sage_solve.py]].
+
+#+begin_src shell
+pwn-init -s               # copy angr_solve.py + z3_solve.py + sage_solve.py
+python3 angr_solve.py
+python3 z3_solve.py
+python3 sage_solve.py
+#+end_src
 
 Make sure to check out what [[https://github.com/nobodyisnobody/tools][nobodyisnobody]] implemented and thank him for the
 great work!
@@ -178,8 +199,8 @@ To run the image directly, without the wrapper functions (/massdns/ will need a
 lot of ports):
 
 #+begin_src shell
-alias recon-run='drunithere --ulimit nofile=65535:65535 --sysctl "net.ipv4.ip_local_port_range=10000 65535" skw/recon '
-alias recon-shell='dshellhere skw/recon '
+recon-run --help   # the image's own entrypoint, no argument rewriting
+recon-shell        # interactive shell inside the image
 #+end_src
 
 * semgrep
@@ -189,19 +210,16 @@ not wish to install the pro version, comment out the corresponding line in the
 [[./semgrep/Dockerfile][Dockerfile]]. Otherwise the /semgrep/ cli will prompt for login during the
 building of the image.
 
-#+begin_src shell
-alias semgrep='drunithere --entrypoint semgrep skw/semgrep '
-alias semgrep-pro-scan='semgrep scan --pro --dataflow-traces --max-lines-per-finding=0 --max-target-bytes=5000000 --time '
-alias semgrep-shell='drunithere --entrypoint /bin/bash skw/semgrep '
-#+end_src
+Commands: =semgrep= (the cli), =semgrep-pro-scan= (=semgrep scan --pro= with the
+flags I use) and =semgrep-shell=.
 
 * vsftpd
 
-Exposes a FTP server via [[https://security.appspot.com/vsftpd.html][vsftpd]] on port 21 (and ports 3000-3009 for passive
+Exposes a FTP server via [[https://security.appspot.com/vsftpd.html][vsftpd]] on port 21 (and ports 30000-30009 for passive
 mode). It serves the directory mounted as //home/ftpuser/, /FTP_USER/ and
 /FTP_PASS/ can be passed as environment variables. The /vsftpd/ configuration
 can be further edited in [[./vsftpd/entrypoint.sh][entrypoint.sh]].
 
 #+begin_src shell
-docker run --rm --network=host -v `pwd`:/home/ftpuser -e FTP_USER=skw -e FTP_PASS=foobar skw/vsftpd
+vsftpd "$(pwd)" skw foobar    # directory, user, password
 #+end_src

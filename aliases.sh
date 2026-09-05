@@ -1,10 +1,15 @@
-# Aliases for common docker commands
-alias drun='docker run --rm '
-alias drunhere='drun -v "$(pwd):/work" -w /work '
-alias drunit='drun -it '
-alias drunithere='drunit -v "$(pwd):/work" -w /work '
-alias dshell='drunit --entrypoint=/bin/bash '
-alias dshellhere='drunithere --entrypoint=/bin/bash '
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "aliases.sh needs bash (it uses BASH_SOURCE); source it from bash." >&2
+    return 1 2>/dev/null || exit 1
+fi
+
+# Docker invocation building blocks
+drun() { docker run --rm "$@"; }
+drunhere() { drun -v "$(pwd):/work" -w /work "$@"; }
+drunit() { drun -it "$@"; }
+drunithere() { drunit -v "$(pwd):/work" -w /work "$@"; }
+dshell() { drunit --entrypoint=/bin/bash "$@"; }
+dshellhere() { drunithere --entrypoint=/bin/bash "$@"; }
 
 # Shortcut for calling Makefile rules from anywhere
 mdm() {
@@ -30,17 +35,19 @@ fi
 
 
 # skw/ad
-alias ad-run='drunhere --network=host skw/ad '
-alias ad-runit='drunithere --network=host skw/ad '
-alias ad-shell='dshellhere --network=host skw/ad '
-alias bloodhound-ce-python='ad-runit bloodhound-ce-python '
-alias bloodhound-python='ad-runit bloodhound-python '
-alias certipy='ad-runit certipy '
-alias coercer='ad-runit coercer '
-alias nxc='drunithere -v "$(pwd)/.docker-ad-nxc:/root/.nxc" --network=host skw/ad nxc '
-alias responder='drunithere -v "$(pwd)/.docker-ad-responder:/root/tools/responder/logs" skw/ad Responder.py '
-alias smbclient='ad-runit smbclient '
-alias smbserver='ad-run smbserver.py -smb2support '
+ad-run() { drunhere --network=host skw/ad "$@"; }
+ad-runit() { drunithere --network=host skw/ad "$@"; }
+ad-shell() { dshellhere --network=host skw/ad "$@"; }
+bloodhound-ce-python() { ad-runit bloodhound-ce-python "$@"; }
+bloodhound-python() { ad-runit bloodhound-python "$@"; }
+certipy() { ad-runit certipy "$@"; }
+coercer() { ad-runit coercer "$@"; }
+nxc() { drunithere -v "$(pwd)/.docker-ad-nxc:/root/.nxc" --network=host skw/ad nxc "$@"; }
+responder() {
+    drunithere -v "$(pwd)/.docker-ad-responder:/root/tools/responder/logs" skw/ad Responder.py "$@"
+}
+smbclient() { ad-runit smbclient "$@"; }
+smbserver() { ad-run smbserver.py -smb2support "$@"; }
 
 petitpotam() {
     ad-shell -c '. /root/.local/share/pipx/venvs/impacket/bin/activate; PetitPotam.py "$@"' _ "$@"
@@ -64,7 +71,7 @@ bloodhound-run() {
 
     export POSTGRES_DATA_MOUNT="$(pwd)/.docker-bh-postgres"
     export NEO4J_DATA_MOUNT="$(pwd)/.docker-bh-neo4j"
-    docker-compose -p "${CONTAINER_NAME}" -f "$(dirname -- ${BASH_SOURCE[0]})/bloodhound/docker-compose.yml" up
+    docker compose -p "${CONTAINER_NAME}" -f "$(dirname -- ${BASH_SOURCE[0]})/bloodhound/docker-compose.yml" up
 
     unset BLOODHOUND_PORT
     unset NEO4J_WEB_PORT
@@ -74,28 +81,32 @@ bloodhound-run() {
 }
 
 # skw/forensic
-alias forensic-run='drunhere skw/forensic '
-alias forensic-runit='drunithere skw/forensic '
-alias forensic-shell='dshellhere skw/forensic '
-alias volatility='forensic-run vol -s /symbols '
+forensic-run() { drunhere skw/forensic "$@"; }
+forensic-runit() { drunithere skw/forensic "$@"; }
+forensic-shell() { dshellhere skw/forensic "$@"; }
+volatility() { forensic-run vol -s /symbols "$@"; }
 
 # skw/http-server
-alias http-server='drunithere --network=host skw/http-server '
-alias https-server='http-server --server-certificate /etc/ssl/private/server.pem '
+http-server() { drunithere --network=host skw/http-server "$@"; }
+https-server() { http-server --server-certificate /etc/ssl/private/server.pem "$@"; }
 
 # skw/java-env
-alias jdeserialize='drunhere skw/java-env jdeserialize '
-alias marshalsec='drunhere skw/java-env marshalsec '
-alias ysoserial='drunhere skw/java-env ysoserial '
+jdeserialize() { drunhere skw/java-env jdeserialize "$@"; }
+marshalsec() { drunhere skw/java-env marshalsec "$@"; }
+ysoserial() { drunhere skw/java-env ysoserial "$@"; }
 
 # skw/pwn
-alias pwn-run='drunhere --network=host skw/pwn '
-alias pwn-runit='drunithere --network=host skw/pwn '
-alias pwn-shell='dshellhere --network=host skw/pwn '
+pwn-run() { drunhere --network=host skw/pwn "$@"; }
+pwn-runit() { drunithere --network=host skw/pwn "$@"; }
+pwn-shell() { dshellhere --network=host skw/pwn "$@"; }
 
 # skw/recon
-alias recon-run='drunithere --ulimit nofile=65535:65535 --sysctl "net.ipv4.ip_local_port_range=10000 65535" -e HOST_OUTPUT_DIR="$PWD" skw/recon '
-alias recon-shell='dshellhere skw/recon '
+recon-run() {
+    drunithere --ulimit nofile=65535:65535 \
+        --sysctl "net.ipv4.ip_local_port_range=10000 65535" \
+        -e HOST_OUTPUT_DIR="$PWD" skw/recon "$@"
+}
+recon-shell() { dshellhere skw/recon "$@"; }
 
 recon() {
     # recon() runs gimmesubs | http-probe | nuclei-auto.
@@ -271,10 +282,14 @@ subs2web() {
     gimmesubs "${g[@]}" | http-probe - "${h[@]}"
 }
 
-# skw/semgrep
-alias semgrep='drunithere --entrypoint semgrep skw/semgrep '
-alias semgrep-pro-scan='semgrep scan --pro --dataflow-traces --max-lines-per-finding=0 --max-target-bytes=5000000 --time '
-alias semgrep-shell='drunithere --entrypoint /bin/bash skw/semgrep '
+# skw/semgrep — the pro-scan flags live here and nowhere else (semgrep's image
+# has no entrypoint script duplicating them).
+semgrep() { drunithere --entrypoint semgrep skw/semgrep "$@"; }
+semgrep-pro-scan() {
+    semgrep scan --pro --dataflow-traces --max-lines-per-finding=0 \
+        --max-target-bytes=5000000 --time "$@"
+}
+semgrep-shell() { drunithere --entrypoint /bin/bash skw/semgrep "$@"; }
 
 # skw/vsftpd (dir, user, password)
 vsftpd() {
@@ -282,7 +297,9 @@ vsftpd() {
 }
 
 # Misc software / scripts
-alias evil-winrm='drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm'
-alias mobsf='drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest '
-alias sonarqube='drun -p 7022:9000 sonarqube:latest '
-alias unblob='drunhere -v "$(pwd):/data" -w /data -u $UID:$GID ghcr.io/onekey-sec/unblob:latest '
+evil-winrm() { drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm "$@"; }
+mobsf() { drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest "$@"; }
+sonarqube() { drun -p 7022:9000 sonarqube:latest "$@"; }
+unblob() {
+    drunhere -v "$(pwd):/data" -w /data -u "$(id -u):$(id -g)" ghcr.io/onekey-sec/unblob:latest "$@"
+}

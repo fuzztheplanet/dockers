@@ -1,20 +1,23 @@
-﻿FROM skw/base-archlinux
+FROM skw/base-archlinux
 
-# Arch Packages
-RUN pacman --noconfirm -Syu base-devel \
+# Arch packages — one -Syu for the whole image (python-pycryptodome and
+# python-termcolor are angecryption.py's runtime deps; installing them in a
+# later layer would be a partial upgrade against a stale DB).
+RUN pacman --noconfirm -Syu --needed \
+    base-devel \
     binwalk foremost volatility3 \
     perl-image-exiftool \
     libewf \
     wireshark-cli \
-    python-minidump && \
-    pacman --noconfirm -Scc && pacman --noconfirm -Sc
+    python-minidump \
+    python-pycryptodome python-termcolor && \
+    rm -rf /var/cache/pacman/pkg/*
 
 # /root/tools contains manually installed tools
 RUN mkdir /root/tools
 
 # angecryption.py
-RUN pacman --noconfirm -Syu python-pycryptodome python-termcolor \
-    && curl -o /usr/local/bin/angecryption.py \
+RUN curl -o /usr/local/bin/angecryption.py \
     https://raw.githubusercontent.com/1sis/Angecryption/refs/heads/main/angecryption.py \
     && chmod +x /usr/local/bin/angecryption.py
 

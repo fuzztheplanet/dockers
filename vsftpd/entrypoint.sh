@@ -49,6 +49,8 @@ EOF
 touch /var/log/vsftpd.log
 chmod 666 /var/log/vsftpd.log
 
-# Run vsftpd
-exec vsftpd /etc/vsftpd/vsftpd.conf &
-tail -f /var/log/vsftpd.log
+# Stream the log to the container's stdout, then hand PID 1 to vsftpd itself so
+# it receives SIGTERM from `docker stop` and the container dies with the server.
+tail -F /var/log/vsftpd.log &
+
+exec vsftpd /etc/vsftpd/vsftpd.conf

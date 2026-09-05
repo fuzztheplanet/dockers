@@ -1,9 +1,9 @@
 FROM skw/base-ubuntu
 
-RUN DEBIAN_FRONTEND=noninteractive apt -y install \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     php-dev php-pear php-xml php-zip php-sqlite3 \
     libsodium-dev && \
-    apt -y autoremove && apt -y autoclean && apt -y autopurge
+    apt-get -y autoremove && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pecl install -f libsodium
 

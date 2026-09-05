@@ -1,14 +1,14 @@
 FROM skw/base-archlinux
 
-# Arch packages
-RUN pacman --noconfirm -S base-devel rust \
+# Arch packages + pipx, in a single -Syu transaction: splitting them across
+# layers (and using a bare -S against the base image's stale DB) is a partial
+# upgrade, which 404s on package files as soon as the mirrors rotate.
+RUN pacman --noconfirm -Syu --needed \
+    base-devel rust \
     proxychains \
-    smbclient krb5 && \
-    pacman --noconfirm -Scc && pacman --noconfirm -Sc
-
-# Setup pipx
-RUN pacman --noconfirm -Syu python-pip python-pipx python-uv && \
-    pacman --noconfirm -Scc && pacman --noconfirm -Sc && \
+    smbclient krb5 \
+    python-pip python-pipx python-uv && \
+    rm -rf /var/cache/pacman/pkg/* && \
     pipx ensurepath
 ENV PATH="$PATH:/root/.local/bin"
 

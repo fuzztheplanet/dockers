@@ -1,7 +1,7 @@
 #+TITLE: Dockers
 
 This repository contains Docker images that I regularly use. [[./Makefile][Makefile]] builds the
-images and [[./aliases.sh][aliases.sh]] defines the shell functions that drive them.
+images and [[./aliases.sh][aliases.sh]] defines utility functions around them.
 
 #+begin_src shell
 source aliases.sh   # bash only — it uses BASH_SOURCE
@@ -91,6 +91,19 @@ and JRE as well as some other common tools:
 
 Commands: =jdeserialize=, =marshalsec=, =ysoserial= — each runs against the
 current directory.
+
+* jazzer
+
+Based on *java-env*, this image ships [[https://github.com/CodeIntelligenceTesting/jazzer][jazzer]], a coverage-guided fuzzer for
+the JVM.
+
+#+begin_src shell
+jazzer --cp=target.jar --target_class=FuzzTarget   # run jazzer against $(pwd)
+jazzer-shell                                       # interactive shell, $(pwd) mounted at /work
+#+end_src
+
+Commands: =jazzer= (the fuzzer itself, run from the current directory) and
+=jazzer-shell=.
 
 * php-env
 

@@ -95,6 +95,10 @@ jdeserialize() { drunhere skw/java-env jdeserialize "$@"; }
 marshalsec() { drunhere skw/java-env marshalsec "$@"; }
 ysoserial() { drunhere skw/java-env ysoserial "$@"; }
 
+# skw/jazzer
+jazzer() { drunithere skw/jazzer jazzer "$@"; }
+jazzer-shell() { dshellhere skw/jazzer "$@"; }
+
 # skw/pwn
 pwn-run() { drunhere --network=host skw/pwn "$@"; }
 pwn-runit() { drunithere --network=host skw/pwn "$@"; }

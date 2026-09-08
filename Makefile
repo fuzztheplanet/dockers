@@ -1,4 +1,4 @@
-IMAGES = base-alpine base-archlinux base-debian base-ubuntu ad forensic http-server java-env php-env pwn recon semgrep vsftpd
+IMAGES = base-alpine base-archlinux base-debian base-ubuntu ad forensic http-server java-env jazzer php-env pwn recon semgrep vsftpd
 DOCKER_CMD = docker
 
 
@@ -11,6 +11,7 @@ ad:               base-archlinux
 forensic:         base-archlinux
 http-server:
 java-env:         base-archlinux
+jazzer:           java-env
 php-env:          base-ubuntu
 pwn:              base-archlinux
 recon:

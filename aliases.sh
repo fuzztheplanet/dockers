@@ -300,10 +300,33 @@ vsftpd() {
     docker run --rm --network=host -v "${1}:/home/ftpuser" -e FTP_USER="$2" -e FTP_PASS="${3}" skw/vsftpd
 }
 
+# skw/web
+web-run() { drunhere --network=host skw/web "$@"; }
+web-runit() { drunithere --network=host skw/web "$@"; }
+web-shell() { dshellhere --network=host skw/web "$@"; }
+ffuf() { web-runit ffuf "$@"; }
+nomore403() { web-runit nomore403 "$@"; }
+sqlmap() { web-runit sqlmap "$@"; }
+batchql() { web-runit batchql "$@"; }
+bypass-url-parser() { web-runit bypass-url-parser "$@"; }
+arjun() { web-runit arjun "$@"; }
+
 # Misc software / scripts
 evil-winrm() { drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm "$@"; }
 mobsf() { drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest "$@"; }
 sonarqube() { drun -p 7022:9000 sonarqube:latest "$@"; }
 unblob() {
     drunhere -v "$(pwd):/data" -w /data -u "$(id -u):$(id -g)" ghcr.io/onekey-sec/unblob:latest "$@"
+}
+
+
+intigriti_wildcards() {
+    if [ $# -ne 1 ] || [ -z "$1" ]; then
+        printf 'usage: intigriti_wildcards <intigriti-token>\n' >&2
+        return 2
+    fi
+    docker run --rm --pull=always ghcr.io/sw33tlie/bbscope:latest \
+        poll it -t "$1" -p --category wildcard -o t \
+    | LC_ALL=C sed -n 's#^[[:space:]]*\*\.\([0-9a-zA-Z.-]*\)[[:space:]]*$#\1#p' \
+    | sort -u
 }

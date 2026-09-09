@@ -236,3 +236,22 @@ can be further edited in [[./vsftpd/entrypoint.sh][entrypoint.sh]].
 #+begin_src shell
 vsftpd "$(pwd)" skw foobar    # directory, user, password
 #+end_src
+
+* web
+
+CLI tools that are useful when testing web applications.
+
+- [[https://github.com/s0md3v/Arjun][arjun]]
+- [[https://github.com/assetnote/batchql][batchql]]
+- [[https://github.com/laluka/bypass-url-parser][bypass-url-parser]]
+- [[https://github.com/ffuf/ffuf][ffuf]]
+- [[https://github.com/devploit/nomore403][nomore403]]
+- [[https://github.com/sqlmapproject/sqlmap][sqlmap]]
+
+Commands: =web-run=, =web-runit=, =web-shell= for the container itself, plus the
+wrappers =ffuf=, =nomore403=, =sqlmap=, =bypass-url-parser=, =batchql=,
+=arjun=. Each mounts the current directory at //work/ (wordlists,
+output) and runs with =--network=host=.
+
+/nomore403/ reads its payload lists from a folder; the image ships them and the
+wrapper points at them automatically unless you pass your own =-f/--folder=.

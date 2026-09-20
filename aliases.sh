@@ -301,15 +301,88 @@ vsftpd() {
 }
 
 # skw/web
-web-run() { drunhere --network=host skw/web "$@"; }
-web-runit() { drunithere --network=host skw/web "$@"; }
-web-shell() { dshellhere --network=host skw/web "$@"; }
-ffuf() { web-runit ffuf "$@"; }
-nomore403() { web-runit nomore403 "$@"; }
-sqlmap() { web-runit sqlmap "$@"; }
-batchql() { web-runit batchql "$@"; }
-bypass-url-parser() { web-runit bypass-url-parser "$@"; }
-arjun() { web-runit arjun "$@"; }
+# Host networking is opt-in: only localhost/127.0.0.1 targets need it, and it
+# hands the container the host's whole network stack. Set WEB_NETWORK_HOST=1
+# (e.g. to reach a service running on the host) to add --network=host back.
+_web_net() { [[ -n "${WEB_NETWORK_HOST:-}" ]] && printf -- '--network=host'; }
+
+web-run() { drunhere $(_web_net) skw/web "$@"; }
+web-runit() { drunithere $(_web_net) skw/web "$@"; }
+web-shell() { dshellhere $(_web_net) skw/web "$@"; }
+
+# Tool wrappers go through web-pipe: -i always, so stdin reaches the tool, but
+# -t only when stdin AND stdout are terminals. With -t, a piped stdin makes
+# docker refuse to start ("input device is not a TTY") and a redirected stdout
+# gets CRLF line endings — so `cat urls | uro | anew all.txt` and `gau x > f`
+# need it off, while interactive use (sqlmap prompts, colors) keeps it on.
+web-pipe() {
+    local t=-i
+    [[ -t 0 && -t 1 ]] && t=-it
+    drun "$t" -v "$(pwd):/work" -w /work $(_web_net) skw/web "$@"
+}
+
+# content discovery, bypass, injection, params
+ffuf() { web-pipe ffuf "$@"; }
+nomore403() { web-pipe nomore403 "$@"; }
+sqlmap() { web-pipe sqlmap "$@"; }
+sstimap() { web-pipe sstimap "$@"; }   # SSTI detect/exploit: sstimap -u URL
+batchql() { web-pipe batchql "$@"; }
+clairvoyance() { web-pipe clairvoyance "$@"; }
+bypass-url-parser() { web-pipe bypass-url-parser "$@"; }
+arjun() { web-pipe arjun "$@"; }
+paramspider() { web-pipe paramspider "$@"; }   # archive-mined params: paramspider -d acme.com
+
+# URL / endpoint discovery, JS analysis
+#   echo acme.com | gau | uro | anew urls.txt      known URLs, deduped, appended
+#   katana -u https://acme.com -jc -jsl -o k.txt   crawl, parse JS for endpoints
+#   katana -u https://acme.com -headless -jc     crawl with the baked-in chromium (SPAs)
+#   cat urls.txt | subjs | anew js.txt             JS files out of a URL list
+#   jsluice urls app.js ; jsluice secrets app.js   endpoints / secrets from a JS file
+#   cat js.txt | xnLinkFinder -sf acme.com          endpoints + params from JS (output.txt)
+#   sourcemapper -url https://acme.com/app.js.map -output src/
+#   waymore -i acme.com -mode U                    archives, URLs only -> results/acme.com/
+gau() { web-pipe gau "$@"; }
+waymore() { web-pipe waymore "$@"; }
+katana() { web-pipe katana "$@"; }
+uro() { web-pipe uro "$@"; }
+anew() { web-pipe anew "$@"; }
+unfurl() { web-pipe unfurl "$@"; }
+subjs() { web-pipe subjs "$@"; }
+jsluice() { web-pipe jsluice "$@"; }
+# xnLinkFinder reads stdin whenever stdin is not a terminal, even with -i, and
+# docker -i hands the container a pipe. So the TTY follows stdin here: results
+# go to -o/-op files anyway (a redirected stdout only gets its banner, CRLF).
+xnLinkFinder() {
+    local t=-i
+    [[ -t 0 ]] && t=-it
+    drun "$t" -v "$(pwd):/work" -w /work $(_web_net) skw/web xnLinkFinder "$@"
+}
+sourcemapper() { web-pipe sourcemapper "$@"; }
+js-beautify() { web-pipe js-beautify "$@"; }
+
+# payload rewriting, pattern grep, reflection, XSS
+#   cat urls.txt | gf xss | qsreplace FUZZ | anew xss-candidates.txt
+#   cat urls.txt | Gxss -c 50 | anew reflected.txt   params whose value is reflected
+#   cat urls.txt | kxss                              reflected + which special chars survive
+#   cat urls.txt | dalfox pipe                       scan a URL list for XSS
+#   gf -list                                         show the baked gf patterns
+qsreplace() { web-pipe qsreplace "$@"; }
+gf() { web-pipe gf "$@"; }
+Gxss() { web-pipe Gxss "$@"; }
+kxss() { web-pipe kxss "$@"; }
+dalfox() { web-pipe dalfox "$@"; }
+
+# takeover, CORS, secret & source exposure, JWT
+#   subzy run --targets subs.txt                     subdomain-takeover fingerprinting
+#   corsy -i urls.txt                                CORS misconfig: reflected origin + creds
+#   git-dumper http://acme.com/.git/ dump/           rebuild an exposed .git over plain GETs
+#   trufflehog filesystem dump/ --no-verification    secrets, detect-only (never validated)
+#   jwt_tool <token>                                 decode/inspect a JWT (alg:none, weak sig)
+subzy() { web-pipe subzy "$@"; }
+corsy() { web-pipe corsy "$@"; }
+git-dumper() { web-pipe git-dumper "$@"; }
+trufflehog() { web-pipe trufflehog "$@"; }
+jwt_tool() { web-pipe jwt_tool "$@"; }
 
 # Misc software / scripts
 evil-winrm() { drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm "$@"; }

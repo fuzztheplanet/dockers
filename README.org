@@ -241,17 +241,118 @@ vsftpd "$(pwd)" skw foobar    # directory, user, password
 
 CLI tools that are useful when testing web applications.
 
+Content discovery, bypass, injection, params:
+
 - [[https://github.com/s0md3v/Arjun][arjun]]
 - [[https://github.com/assetnote/batchql][batchql]]
 - [[https://github.com/laluka/bypass-url-parser][bypass-url-parser]]
+- [[https://github.com/nikitastupin/clairvoyance][clairvoyance]]
 - [[https://github.com/ffuf/ffuf][ffuf]]
 - [[https://github.com/devploit/nomore403][nomore403]]
+- [[https://github.com/devanshbatham/paramspider][paramspider]]
 - [[https://github.com/sqlmapproject/sqlmap][sqlmap]]
+- [[https://github.com/vladko312/SSTImap][SSTImap]]
 
-Commands: =web-run=, =web-runit=, =web-shell= for the container itself, plus the
-wrappers =ffuf=, =nomore403=, =sqlmap=, =bypass-url-parser=, =batchql=,
-=arjun=. Each mounts the current directory at //work/ (wordlists,
-output) and runs with =--network=host=.
+URL / endpoint discovery and JS source analysis:
+
+- [[https://github.com/tomnomnom/anew][anew]]
+- [[https://github.com/lc/gau][gau]]
+- [[https://github.com/beautifier/js-beautify][js-beautify]]
+- [[https://github.com/BishopFox/jsluice][jsluice]]
+- [[https://github.com/projectdiscovery/katana][katana]]
+- [[https://github.com/denandz/sourcemapper][sourcemapper]]
+- [[https://github.com/lc/subjs][subjs]]
+- [[https://github.com/tomnomnom/unfurl][unfurl]]
+- [[https://github.com/s0md3v/uro][uro]]
+- [[https://github.com/xnl-h4ck3r/waymore][waymore]]
+- [[https://github.com/xnl-h4ck3r/xnLinkFinder][xnLinkFinder]]
+
+Payload rewriting, pattern matching, reflection, XSS:
+
+- [[https://github.com/hahwul/dalfox][dalfox]]
+- [[https://github.com/tomnomnom/gf][gf]] (with [[https://github.com/tomnomnom/gf/tree/master/examples][tomnomnom]] and [[https://github.com/1ndianl33t/Gf-Patterns][1ndianl33t]] patterns baked in)
+- [[https://github.com/KathanP19/Gxss][Gxss]]
+- [[https://github.com/Emoe/kxss][kxss]]
+- [[https://github.com/tomnomnom/qsreplace][qsreplace]]
+
+Takeover, CORS, secret & source exposure, JWT:
+
+- [[https://github.com/s0md3v/Corsy][corsy]]
+- [[https://github.com/arthaud/git-dumper][git-dumper]]
+- [[https://github.com/ticarpi/jwt_tool][jwt_tool]]
+- [[https://github.com/PentestPad/subzy][subzy]]
+- [[https://github.com/trufflesecurity/trufflehog][trufflehog]]
+
+Commands: =web-run=, =web-runit=, =web-shell= for the container itself, plus a
+wrapper named after every tool above. Each mounts the current directory at
+//work/. Host networking is opt-in: set =WEB_NETWORK_HOST=1= to add
+=--network=host= (needed only to reach a /localhost/ or /127.0.0.1/ target on
+the host); remote targets use the default bridge. The wrappers only allocate a
+TTY when both stdin and stdout are terminals, so they can be chained with pipes
+and redirections like the native binaries:
+
+#+begin_src shell
+echo acme.com | gau | uro | anew urls.txt                # known URLs, deduped
+katana -u https://acme.com -jc -jsl -o katana.txt        # crawl, parse JS for endpoints
+cat urls.txt | subjs | anew js.txt                       # JS files out of a URL list
+curl -s https://acme.com/app.js | js-beautify - > app.js # readable source
+jsluice urls app.js ; jsluice secrets app.js             # endpoints / secrets from JS
+cat js.txt | xnLinkFinder -sf acme.com                   # endpoints + params from JS -> output.txt
+sourcemapper -url https://acme.com/app.js.map -output src/
+waymore -i acme.com -mode U                              # archives, URLs only
+cat urls.txt | unfurl paths | anew paths.txt             # path wordlist from URLs
+cat urls.txt | gf xss | qsreplace FUZZ | anew xss.txt    # gf pattern -> one payload per param
+cat urls.txt | dalfox pipe                               # scan a URL list for XSS
+#+end_src
+
+/gf/ ships tomnomnom's example patterns plus /Gf-Patterns/ (=gf -list= shows
+them), so =gf xss=, =gf ssrf=, =gf redirect= and the rest work out of the box.
+
+/SSTImap/ detects and exploits server-side template injection (Jinja2, Twig,
+Freemarker, Velocity, Mako, Smarty and more). Point it at a reflecting
+parameter; once it confirms an engine it can run commands or drop a shell:
+
+#+begin_src shell
+sstimap -u 'https://acme.com/page?name=John'      # detect the engine
+sstimap -u 'https://acme.com/page?name=John' --os-cmd id   # if exploitable
+#+end_src
+
+Reflection, takeover and exposure checks:
+
+#+begin_src shell
+paramspider -d acme.com                          # hidden params mined from web archives
+cat urls.txt | Gxss -c 50 | anew reflected.txt   # params whose value is reflected back
+cat urls.txt | kxss                              # reflected + which special chars survive
+corsy -i urls.txt                                # CORS misconfig: reflected origin + credentials
+subzy run --targets subs.txt                     # subdomain-takeover fingerprinting
+git-dumper http://acme.com/.git/ dump/           # rebuild an exposed .git over plain GETs
+trufflehog filesystem dump/ --no-verification    # secrets in the dumped source, detect-only
+jwt_tool <token>                                 # decode/inspect a JWT (alg:none, weak signing)
+#+end_src
+
+Run /trufflehog/ with =--no-verification= so it flags candidate secrets without
+validating them against the live service, and treat the subdomain lists you feed
+/subzy/ as scope input, not an invitation to scan out of scope.
 
 /nomore403/ reads its payload lists from a folder; the image ships them and the
 wrapper points at them automatically unless you pass your own =-f/--folder=.
+
+/xnLinkFinder/ needs a scope with =-sf= and, upstream, reads stdin whenever stdin
+is not a terminal, even with =-i=. Its wrapper therefore keeps a TTY as long as
+stdin is one; take the results from =-o=/=-op= (or =output.txt=) rather than a
+redirected stdout, and pipe a URL list into it instead of =-i= for batches.
+
+/waymore/ writes to =results/<domain>/= under the current directory (the image's
+config sets =DEFAULT_OUTPUT_DIR= to //work/). Default mode /B/ also downloads
+every archived response, which is slow and large; =-mode U= for URLs only.
+
+/katana/ =-headless= (and =-hybrid=) run on a chromium baked into the image
+(about 760MB of it), so DOM-rendered SPAs crawl on any host, servers without a
+browser included. The wrapper adds =-system-chrome-path /usr/bin/chromium
+-no-sandbox= whenever a browser mode is requested, which keeps katana from
+downloading its own glibc chrome (it cannot run on Alpine); pass your own
+=-system-chrome-path= or =-chrome-ws-url= and the wrapper stays out of the way.
+
+#+begin_src shell
+katana -u https://acme.com -headless -jc -o katana.txt   # render JS, crawl the DOM
+#+end_src

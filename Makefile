@@ -1,5 +1,6 @@
 IMAGES = base-alpine base-archlinux base-debian base-ubuntu ad forensic http-server java-env jazzer php-env pwn recon semgrep vsftpd web
 DOCKER_CMD = docker
+BUILD_ARGS =
 
 
 all: $(IMAGES)
@@ -29,7 +30,7 @@ common:
 
 
 $(IMAGES): common
-	$(DOCKER_CMD) build -t skw/$@:latest -f $@/Dockerfile .
+	$(DOCKER_CMD) build $(BUILD_ARGS) -t skw/$@:latest -f $@/Dockerfile .
 
 
 list:

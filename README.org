@@ -4,9 +4,30 @@ This repository contains Docker images that I regularly use. [[./Makefile][Makef
 images and [[./aliases.sh][aliases.sh]] defines utility functions around them.
 
 #+begin_src shell
-source aliases.sh   # bash only — it uses BASH_SOURCE
-make                # every image, or: make <image>
+source aliases.sh
+make list
+make web
 #+end_src
+
+Dependencies are wired up, so =make ad= builds /base-archlinux/ first. =mdm=
+calls any Makefile target from any directory, with fzf completion and a
+Dockerfile preview when /fzf/ is installed:
+
+#+begin_src shell
+mdm web                          # same as make web, from anywhere
+make DOCKER_CMD=podman           # build with podman instead of docker
+make web BUILD_ARGS=--no-cache   # extra flags passed to docker build
+#+end_src
+
+*Careful:* =make clean= is not scoped to this repository. It runs =docker system
+prune -a -f= and then =docker volume prune -a -f=, so it removes every unused
+image on the machine and every unused volume.
+
+Sourcing /aliases.sh/ defines a function for almost every tool in these images,
+and those functions shadow host binaries of the same name for the rest of the
+shell session: =sqlmap=, =smbclient=, =ffuf=, =gau=, =gf=, =semgrep=,
+=trufflehog=, =nxc= and =vsftpd= among them. Use =command <tool>= to reach the
+host's own copy.
 
 * base-* images
 
@@ -22,12 +43,15 @@ useful small utilities like /tmux/, /nano/, /git/ and /curl/.
 
 /nxc all the things/:
 
-- [[https://github.com/dirkjanm/BloodHound.py?][bloodhound.py]]
+- [[https://github.com/dirkjanm/BloodHound.py][bloodhound.py]]
 - [[https://github.com/CravateRouge/bloodyAD][bloodyad]] and [[https://github.com/CravateRouge/autobloody][autobloody]]
-- [[https://github.com/Pennyw0rth/NetExec][netexec]]
+- [[https://github.com/ly4k/Certipy][certipy]]
+- [[https://github.com/p0dalirius/Coercer][coercer]]
 - [[https://github.com/fortra/impacket][impacket]]
+- [[https://github.com/Pennyw0rth/NetExec][netexec]]
 - [[https://github.com/topotam/PetitPotam][petitpotam]]
 - [[https://github.com/rofl0r/proxychains-ng][proxychains-ng]]
+- [[https://github.com/lgandx/Responder][responder]]
 
 Local /nxc/ data will be saved under the current directory in /.docker-ad-nxc/.
 
@@ -39,16 +63,28 @@ wrappers =bloodhound-python=, =bloodhound-ce-python=, =certipy=, =coercer=, =nxc
 
 * bloodhound
 
-Enable to runs multiple [[https://github.com/SpecterOps/BloodHound][BloudHound]] instances easily. Each instance will store
-its Postgres and Neo4J data in the current directory. Defaults can be customized
-via the [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env][.env]] files.
+Lets you run several [[https://github.com/SpecterOps/BloodHound][BloodHound]] instances easily. This one is a
+=docker compose= project rather than one of the =make= images.
+
+Copy the example environment file first and set an admin password: there is no
+default for =bhe_default_admin_password=, and the first launch needs one.
+
+#+begin_src shell
+cp bloodhound/.env.example bloodhound/.env
+$EDITOR bloodhound/.env      # at minimum: bhe_default_admin_password=
+#+end_src
+
+Remaining defaults live in [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env.example][.env.example]]. The /.env/
+you copy it to is gitignored, so real secrets stay out of commits.
 
 #+begin_src shell
 cd ~/projectA && bloodhound-run                          # ports 8111 / 7474 / 7687
 cd ~/projectB && bloodhound-run projectb 8712 7475 7688  # name, then custom ports
 #+end_src
 
-Each instance is its own =docker compose= project, so several can run side by side.
+Each instance keeps its data under the current directory, in
+/.docker-bh-postgres/ and /.docker-bh-neo4j/, and is its own =docker compose=
+project — so several can run side by side.
 
 * forensic
 
@@ -82,7 +118,7 @@ https-server         # same over TLS, with the certificate baked into the image
 
 * java-env
 
-This image is based on *archlinux-base* and offers several versions of the JDK
+This image is based on *base-archlinux* and offers several versions of the JDK
 and JRE as well as some other common tools:
 
 - [[https://github.com/unsynchronized/jdeserialize][jdeserialize]]
@@ -109,6 +145,13 @@ Commands: =jazzer= (the fuzzer itself, run from the current directory) and
 
 A standard PHP installation (latest version in the repositories) of Ubuntu with
 some additional PHP utilities (/libsodium/).
+
+This is the one image with no wrapper functions in [[./aliases.sh][aliases.sh]], so run it directly:
+
+#+begin_src shell
+docker run --rm -it -v "$(pwd):/work" -w /work skw/php-env              # shell
+docker run --rm -it -v "$(pwd):/work" -w /work skw/php-env php test.php
+#+end_src
 
 * pwn
 
@@ -146,7 +189,11 @@ pwn-init                  # drop solve.py + utils.py in the working directory
                           # pwn-init -s     also copy the solver skeletons
 #+end_src
 
-Edit /solve.py/ (set =BINARY=, =GDB=, =HOST=/=PORT= and =SSH_*= as appropriate.
+Edit /solve.py/ and set =BINARY=, =HOST=/=PORT= and the =SSH_*= block as
+appropriate. Two more knobs sit further down the file: =context.gdb_binary=
+chooses =gdb-pwndbg= or =gdb-gef=, and the =gdbscript= string holds the commands
+gdb runs on attach. =GDB=, =REMOTE= and =SSH= below are command-line modes, not
+variables to set:
 
 #+begin_src shell
 python3 solve.py          # run the binary locally
@@ -155,6 +202,10 @@ python3 solve.py REMOTE   # connect to HOST:PORT over TCP
 python3 solve.py SSH      # run the challenge on the remote box over ssh
 python3 solve.py SSH GDB  # debug it on the remote box via gdbserver
 #+end_src
+
+The =GDB= modes open gdb in a /tmux/ split, so start /tmux/ inside =pwn-shell=
+first. Without it /solve.py/ writes the gdb commands to /.gdbscript/ and prints
+the =gdb -p <pid> -x .gdbscript= line to attach by hand.
 
 With =-s=, =pwn-init= also copies three solver skeletons: [[./pwn/scripts/angr_solve.py][angr_solve.py]],
 [[./pwn/scripts/z3_solve.py][z3_solve.py]] and [[./pwn/scripts/sage_solve.py][sage_solve.py]].
@@ -196,7 +247,7 @@ make recon
 
 cd ~/engagements/acme
 
-recon acme.com ~/lists/big.txt                 # subdomain enumeration for acme.me
+recon acme.com ~/lists/big.txt                 # subdomain enumeration for acme.com
                                                # then identify http servers and
                                                # scan them with nuclei
 recon --http acme.com ~/lists/big.txt 80,443   # stop after http-probe on port 80 443
@@ -206,6 +257,12 @@ recon --subdomains acme.com ~/lists/big.txt    # only subdomains
 gimmesubs -p acme.com
 http-probe acme.com_*/subdomains.txt
 nuclei-auto http-probe_*/live.txt
+
+# subs2web is gimmesubs piped straight into http-probe; anything after --
+# goes to http-probe
+subs2web -p acme.com
+subs2web -a acme.com ~/lists/dns.txt
+subs2web -p acme.com -- 80,443,8443
 #+end_src
 
 To run the image directly, without the wrapper functions (/massdns/ will need a
@@ -216,12 +273,54 @@ recon-run --help   # the image's own entrypoint, no argument rewriting
 recon-shell        # interactive shell inside the image
 #+end_src
 
+** Configuration
+
+API keys widen /gimmesubs/' passive phase. Every value is optional and a source
+is only queried when its key is set:
+
+#+begin_src shell
+cp recon/.env.example recon/.env
+$EDITOR recon/.env      # OTX_KEY, LEAKIX_KEY, DNSDUMPSTER_KEY, FULLHUNT_KEY
+#+end_src
+
+/subfinder/ keeps its own provider list in a separate file:
+
+#+begin_src shell
+cp recon/config/subfinder-provider-config.yaml.example \
+   recon/config/subfinder-provider-config.yaml
+#+end_src
+
+Both files are gitignored. The wrappers bind-mount /recon/config/ read-only into
+the container, so edits there take effect without rebuilding the image.
+
+Wordlists are not baked in. Point =RECON_WORDLISTS= at a directory (it defaults
+to /recon/wordlists/) and the wrappers mount it read-only at //wordlists/, which
+also lets you pass a bare name instead of a path:
+
+#+begin_src shell
+export RECON_WORDLISTS=~/lists
+gimmesubs -a acme.com big      # resolves to /wordlists/big.txt
+gimmesubs -a acme.com dns      # a directory of lists works too
+#+end_src
+
+Rates and timeouts are environment variables, forwarded to the container when
+set: =PASSIVE_TIMEOUT= (seconds per passive source), =HTTPX_THREADS=,
+=HTTPX_TIMEOUT=, =HTTPX_RUN_TIMEOUT=, =NUCLEI_RATE_LIMIT=, =NUCLEI_CONCURRENCY=,
+=NUCLEI_RUN_TIMEOUT= and =NUCLEI_EXCLUDE_TAGS=.
+
 * semgrep
 
-Docker installation of [[https://github.com/semgrep/semgrep][semgrep's]] cli with support for the pro version. If you do
-not wish to install the pro version, comment out the corresponding line in the
-[[./semgrep/Dockerfile][Dockerfile]]. Otherwise the /semgrep/ cli will prompt for login during the
-building of the image.
+Docker installation of [[https://github.com/semgrep/semgrep][semgrep's]] cli with support for the pro version.
+
+The pro engine needs an authenticated account, so the build runs =semgrep login=
+and waits for you to open the URL it prints. Two things follow from that: the
+build is interactive, and the token it obtains is written into an image layer,
+where removing it afterwards does not get it back out. Passing
+=SEMGREP_APP_TOKEN= in at runtime keeps it out of the image entirely.
+
+To skip the pro engine, comment out *both* lines in the [[./semgrep/Dockerfile][Dockerfile]]:
+=semgrep login= and =semgrep install-semgrep-pro=. Commenting only the first
+leaves the install with no credentials and the build fails.
 
 Commands: =semgrep= (the cli), =semgrep-pro-scan= (=semgrep scan --pro= with the
 flags I use) and =semgrep-shell=.
@@ -283,11 +382,17 @@ Takeover, CORS, secret & source exposure, JWT:
 - [[https://github.com/PentestPad/subzy][subzy]]
 - [[https://github.com/trufflesecurity/trufflehog][trufflehog]]
 
+Template-driven detection and DNS:
+
+- [[https://github.com/projectdiscovery/nuclei][nuclei]] (full template set baked into the image)
+- /dig/ and /host/ from [[https://www.isc.org/bind/][bind-tools]] (DNS lookups, =AXFR= checks)
+
 Commands: =web-run=, =web-runit=, =web-shell= for the container itself, plus a
-wrapper named after every tool above. Each mounts the current directory at
-//work/. Host networking is opt-in: set =WEB_NETWORK_HOST=1= to add
-=--network=host= (needed only to reach a /localhost/ or /127.0.0.1/ target on
-the host); remote targets use the default bridge. The wrappers only allocate a
+wrapper named after every tool above except /nuclei/, /dig/ and /host/ — reach
+those with =web-run nuclei ...= or from =web-shell=. Each mounts the current
+directory at //work/. Host networking is opt-in: set =WEB_NETWORK_HOST= to 1 to
+add ~--network=host~ (needed only to reach a /localhost/ or /127.0.0.1/ target
+on the host); remote targets use the default bridge. The wrappers only allocate a
 TTY when both stdin and stdout are terminals, so they can be chained with pipes
 and redirections like the native binaries:
 
@@ -334,6 +439,10 @@ Run /trufflehog/ with =--no-verification= so it flags candidate secrets without
 validating them against the live service, and treat the subdomain lists you feed
 /subzy/ as scope input, not an invitation to scan out of scope.
 
+/nuclei/ carries its full template set, baked in at build time, so scans run
+offline with =-disable-update-check=; rebuild the image when you want fresher
+templates.
+
 /nomore403/ reads its payload lists from a folder; the image ships them and the
 wrapper points at them automatically unless you pass your own =-f/--folder=.
 
@@ -348,11 +457,26 @@ every archived response, which is slow and large; =-mode U= for URLs only.
 
 /katana/ =-headless= (and =-hybrid=) run on a chromium baked into the image
 (about 760MB of it), so DOM-rendered SPAs crawl on any host, servers without a
-browser included. The wrapper adds =-system-chrome-path /usr/bin/chromium
--no-sandbox= whenever a browser mode is requested, which keeps katana from
-downloading its own glibc chrome (it cannot run on Alpine); pass your own
+browser included. The wrapper adds
+=-system-chrome-path /usr/bin/chromium -no-sandbox= whenever a browser mode is
+requested, which keeps katana from downloading its own glibc chrome (it cannot
+run on Alpine); pass your own
 =-system-chrome-path= or =-chrome-ws-url= and the wrapper stays out of the way.
 
 #+begin_src shell
 katana -u https://acme.com -headless -jc -o katana.txt   # render JS, crawl the DOM
+#+end_src
+
+* other images
+
+[[./aliases.sh][aliases.sh]] also wraps a handful of images that are not built here. Docker pulls
+them from their own registries on first use, so =make= does not cover them and
+=make clean= will remove them again:
+
+#+begin_src shell
+evil-winrm -i 10.0.0.5 -u user -p pass   # $(pwd) at /data, host networking
+mobsf                                    # MobSF on http://127.0.0.1:7011
+sonarqube                                # SonarQube on :7022, all interfaces
+unblob firmware.bin                      # runs as your uid, so output is not root-owned
+intigriti_wildcards <token>              # bbscope: in-scope wildcard domains, one per line
 #+end_src

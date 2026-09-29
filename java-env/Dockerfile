@@ -2,9 +2,6 @@ FROM skw/base-archlinux
 
 RUN mkdir /root/tools
 
-# Several JDKs and build tools. One -Syu, so the package DB is refreshed in the
-# same transaction as the install (a bare -S against the base image's stale DB
-# 404s once the mirrors rotate).
 RUN pacman --noconfirm -Syu --needed jdk-openjdk jdk8-openjdk maven ant && \
     rm -rf /var/cache/pacman/pkg/*
 
@@ -41,8 +38,7 @@ RUN git clone --depth 1 https://github.com/unsynchronized/jdeserialize /root/too
         > /usr/local/bin/jdeserialize && \
     chmod +x /usr/local/bin/jdeserialize
 
-# Default to the newest installed JDK rather than a hardcoded version, which
-# silently goes stale every time Arch bumps jdk-openjdk.
+# Newest installed JDK
 RUN archlinux-java set \
     "$(archlinux-java status | grep -oE 'java-[0-9]+-openjdk' | sort -uV | tail -1)"
 

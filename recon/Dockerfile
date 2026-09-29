@@ -1,13 +1,10 @@
-# skw/recon — a recon pipeline in a container: recon (orchestrator) chaining
-# gimmesubs -> http-probe -> nuclei-auto, each also usable on its own.
-# Stage 1 builds the Go tools + massdns; stage 2 is the slim runtime.
-# Built from the repo root: make recon
+# recon (orchestrator) chains gimmesubs -> http-probe -> nuclei-auto; each is
+# also usable on its own. Built from the repo root: make recon
 
 FROM golang:1.26-bookworm AS builder
 
-# GOTOOLCHAIN=auto: let Go fetch the toolchain a module asks for.
-# -ldflags "-s -w" drops the symbol table and DWARF at link time — smaller
-# binaries the safe way, rather than running strip over Go binaries afterwards.
+# -ldflags "-s -w" drops symbols/DWARF at link time, which is the safe way to
+# shrink a Go binary (do not run strip over one).
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOBIN=/out/bin \
@@ -21,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /out/bin
 
-# massdns (used by puredns); a C binary, so strip it directly.
+# massdns (for puredns); a C binary, so strip it directly.
 RUN git clone --depth 1 https://github.com/blechschmidt/massdns.git /tmp/massdns \
     && make -C /tmp/massdns -j"$(nproc)" \
     && cp /tmp/massdns/bin/massdns /out/bin/massdns \
@@ -43,9 +40,8 @@ RUN go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/assetfinder@latest
 
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/d3mondev/puredns/v2@latest
 
-# Slim base directly (not skw/base-debian): recon is a headless tool runtime and
-# installs its own runtime deps below, so it doesn't need the interactive dev
-# base (git/perl/locales/tmux/nano) — that would add ~150MB it never uses.
+# Slim base, not skw/base-debian: this is a headless tool runtime with its own
+# deps below, so the interactive base would add ~150MB it never uses.
 FROM debian:12-slim AS runtime
 
 LABEL org.opencontainers.image.title="recon" \
@@ -58,19 +54,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     OUTPUT_DIR=/work \
     HOME=/root
 
-# Runtime deps only. No bind9-dnsutils: gimmesubs uses dnsx (below) for all DNS
-# queries instead of dig, which drops libxml2 -> libicu72 (~36MB) from the image.
+# No bind9-dnsutils: gimmesubs does all DNS through dnsx, not dig, which keeps
+# libxml2 -> libicu72 (~36MB) out of the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl jq tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/bin/ /usr/local/bin/
 
-# /opt/wordlists: resolver lists. /work: results, one directory per run.
 RUN mkdir -p "$WORDLIST_DIR" /work
 
-# --- baked data, all independent of the scripts, so editing a script leaves
-#     these layers cached ----------------------------------------------------
+# Baked data first: independent of the scripts, so editing one leaves these
+# layers cached.
 
 # Public resolver list, fallback for when the per-run download fails.
 RUN curl -fsSL --retry 3 --max-time 180 \
@@ -90,21 +85,19 @@ RUN printf '%s\n' \
         64.6.64.6 77.88.8.8 \
     > "$WORDLIST_DIR/resolvers-trusted.txt"
 
-# nuclei templates, baked in — a hard requirement, not an optimization: scans
-# run with -disable-update-check, so templates are never fetched at runtime.
-# Note: -disable-update-check must NOT be combined with -update-templates here —
-# it suppresses the version check the install relies on, so nothing downloads.
-# Fail the build if the install does not produce a non-empty template set, so a
-# silently template-less image can never ship. Rebuild the image to refresh.
+# Templates must be baked in: scans run with -disable-update-check and never
+# fetch at runtime. Do not add -disable-update-check to the line below — it
+# suppresses the version check the install relies on and nothing downloads.
+# The build fails on an empty template set so a template-less image can't ship.
 RUN nuclei -update-templates \
     && [ -d "$HOME/nuclei-templates" ] \
     && [ -n "$(find "$HOME/nuclei-templates" -name '*.yaml' -print -quit)" ] \
     || { echo "ERROR: nuclei templates failed to install" >&2; exit 1; }
 
-# Bruteforce wordlists are not baked: they are user-provided. The launcher
-# bind-mounts a wordlist directory (RECON_WORDLISTS, if set) read-only at /wordlists.
+# Bruteforce wordlists are not baked; the launcher bind-mounts RECON_WORDLISTS
+# read-only at /wordlists.
 
-# --- scripts and config last: cheap, and the layer that changes most often ---
+# Scripts last: cheap, and the layer that changes most often.
 COPY recon/scripts/ /opt/recon/scripts/
 COPY recon/config/  /opt/recon/config/
 RUN chmod +x /opt/recon/scripts/*.sh \

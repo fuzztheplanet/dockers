@@ -1,16 +1,10 @@
-# skw/web — CLI tooling for testing web applications: content discovery, 40X
-# bypass, injection (SQLi, SSTI), param/endpoint discovery, JS source analysis,
-# plus template-driven detection (nuclei), subdomain-takeover, reflection and
-# CORS candidate checks, and secret scanning.
-# Stage 1 (golang:alpine) builds the Go tools; stage 2 is skw/base-alpine plus
-# the Python tools, receiving only the finished binaries — no toolchain, no
-# module cache. Chromium is baked in so katana -headless works out of the box,
-# with no browser on the host. Built from the repo root: make web
+# Stage 1 builds the Go tools; stage 2 is skw/base-alpine plus the Python tools
+# and receives only the finished binaries. Chromium is baked in so katana
+# -headless works with no browser on the host.
 
 FROM golang:1.26-alpine AS builder
 
-# CGO off => static binaries; GOTOOLCHAIN=auto lets Go fetch a newer toolchain
-# if a module needs one. -ldflags "-s -w" drops symbols/DWARF at link time.
+# CGO off => static binaries. -ldflags "-s -w" drops symbols/DWARF at link time.
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOBIN=/out/bin \
@@ -18,74 +12,56 @@ ENV CGO_ENABLED=0 \
     GOTOOLCHAIN=auto
 ARG GO_LDFLAGS="-s -w"
 
-# git: module fetches + the nomore403 clone. gcc/musl-dev: katana and jsluice
-# embed tree-sitter (C), so those two are cgo builds (see below).
+# git: module fetches + the clones below. gcc/musl-dev: katana and jsluice
+# embed tree-sitter, so those two are cgo builds.
 RUN apk add --no-cache git gcc musl-dev \
     && mkdir -p /out/bin
 
 # One layer per group so an upstream breakage does not invalidate everything.
 
-# --- content discovery / 40X bypass ---------------------------------------
+# content discovery / 40X bypass
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/ffuf/ffuf/v2@latest
 
-# nomore403 reads its payload lists from a folder at runtime (go install would
-# not ship them): build from a clone, keep only the binary and payloads/.
+# nomore403 needs its payloads/ folder at runtime and go install would not ship
+# it, so build from a clone and keep both.
 RUN git clone --depth 1 https://github.com/devploit/nomore403 /tmp/nomore403 \
     && ( cd /tmp/nomore403 && go build -ldflags="$GO_LDFLAGS" -o nomore403 . ) \
     && mkdir -p /out/nomore403 \
     && mv /tmp/nomore403/nomore403 /tmp/nomore403/payloads /out/nomore403/ \
     && rm -rf /tmp/nomore403
 
-# --- URL / endpoint discovery ---------------------------------------------
-# gau: known URLs from wayback/commoncrawl/otx/urlscan. subjs: JS URLs
-# out of a URL list. sourcemapper: rebuilds sources from a .js.map. anew/unfurl:
-# tomnomnom's dedupe-append and URL-part extractor, the glue between the rest.
+# URL / endpoint discovery
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/lc/gau/v2/cmd/gau@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/lc/subjs@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/denandz/sourcemapper@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/anew@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/unfurl@latest
 
-# --- crawling + JS analysis (cgo) -----------------------------------------
-# katana (crawler; -jc/-jsl parse JS for endpoints) pulls in a jsluice fork and
-# jsluice itself (URLs/paths/secrets out of JS via AST) — both link tree-sitter,
-# so CGO is on for these two. -linkmode external -extldflags -static: force the
-# system linker (Go otherwise links small cgo packages internally and silently
-# ignores -extldflags) and make it static against musl, so the runtime image
-# needs nothing beyond the binary.
+# crawling + JS analysis. Both link tree-sitter, so CGO is on here.
+# -linkmode external forces the system linker: without it Go links small cgo
+# packages internally and silently ignores -extldflags. The static musl link is
+# what lets the runtime image ship nothing but the binary.
 RUN CGO_ENABLED=1 go install -v -ldflags="$GO_LDFLAGS -linkmode external -extldflags -static" \
-        github.com/projectdiscovery/katana/cmd/katana@latest \
-    && mv /out/bin/katana /out/bin/katana.bin
+        github.com/projectdiscovery/katana/cmd/katana@latest
+        
 RUN CGO_ENABLED=1 go install -v -ldflags="$GO_LDFLAGS -linkmode external -extldflags -static" \
         github.com/BishopFox/jsluice/cmd/jsluice@latest
 
-# --- payload rewriting + XSS ----------------------------------------------
-# qsreplace: rewrite every query-string value in a URL list (feed one payload).
-# gf: tomnomnom's grep wrapper, driven by baked pattern files (see runtime
-# stage). dalfox: XSS scanner/validator, takes a URL list on stdin.
+# payload rewriting + XSS. gf is driven by the pattern files baked in below.
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/qsreplace@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/tomnomnom/gf@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/hahwul/dalfox/v2@latest
 
-# --- detection scan (projectdiscovery) ------------------------------------
-# nuclei: template-driven detection (run with the takeover/exposures/misconfig/
-# cve tags; templates are baked in the runtime stage).
+# nuclei; its templates are baked into the runtime stage.
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 
-# --- takeover + reflection ------------------------------------------------
-# subzy: subdomain-takeover fingerprinting. Gxss/kxss: reflected-parameter
-# detection — send a canary through params and look for it in the response
-# (reflection only, no payloads).
+# takeover + reflection
 RUN go install -v -ldflags="$GO_LDFLAGS" github.com/PentestPad/subzy@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/KathanP19/Gxss@latest \
  && go install -v -ldflags="$GO_LDFLAGS" github.com/Emoe/kxss@latest
 
-# --- trufflehog (secret scan) ---------------------------------------------
-# Secret detection over dumped source / fetched JS; always run with
-# --no-verification so it detects but never validates a secret against a live
-# service. trufflehog's go.mod carries replace directives, so `go install`
-# refuses it — build from a shallow clone (replace is allowed for the main
-# module), like nomore403, and keep only the binary.
+# trufflehog's go.mod carries replace directives, which go install refuses, so
+# build it from a clone like nomore403.
 RUN git clone --depth 1 https://github.com/trufflesecurity/trufflehog /tmp/trufflehog \
     && ( cd /tmp/trufflehog && go build -ldflags="$GO_LDFLAGS" -o /out/bin/trufflehog . ) \
     && rm -rf /tmp/trufflehog
@@ -101,33 +77,24 @@ ENV HOME=/root \
     PATH="/usr/local/bin:/root/.local/bin:${PATH}" \
     PIP_NO_CACHE_DIR=1
 
-# base-alpine already ships python3/py3-pip/curl/git. Add pipx (isolated venvs
-# for the Python CLIs) and py3-requests (requests + urllib3 for batchql, from
-# the system interpreter, so that one script needs no venv). curl is required at
-# runtime by bypass-url-parser. bind-tools: dig/host for DNS + zone-transfer
-# (AXFR) checks.
+# pipx: isolated venvs for the Python CLIs. py3-requests: lets batchql run off
+# the system interpreter. bind-tools: dig/host for DNS and AXFR checks.
 RUN apk add --no-cache pipx py3-requests bind-tools
 
-# chromium for katana -headless/-hybrid (DOM-rendered SPAs). Alpine's package
-# pulls in everything the browser links (nss, freetype, harfbuzz, mesa...);
-# ttf-freefont gives it at least one font so text layout works. About 760MB on
-# disk, always on: the image is meant to run on servers with no browser of
-# their own. Verified right here (no network needed): fail the build if the
-# browser cannot render a blank page headless.
+# chromium for katana -headless/-hybrid, ~760MB and always on: this image is
+# meant to run on servers with no browser of their own. ttf-freefont gives it
+# one font so text layout works. The build fails if it cannot render a page.
 RUN apk add --no-cache chromium ttf-freefont \
     && chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
            --dump-dom about:blank 2>/dev/null | grep -q '<html' \
     || { echo "ERROR: headless chromium does not run" >&2; exit 1; } \
     && rm -rf /root/.config/chromium /tmp/org.chromium.*
 
-# --- Go tools, from the builder --------------------------------------------
 COPY --from=builder /out/bin/ /usr/local/bin/
 COPY --from=builder /out/nomore403/ /opt/nomore403/
 
-# nuclei templates, baked in (same rationale as skw/recon): scans should run
-# offline with -disable-update-check, so the template set must be present at
-# build time. Fail the build if it ends up empty, so a template-less nuclei can
-# never ship. Rebuild the image to refresh templates.
+# Templates baked in, as in skw/recon: scans run with -disable-update-check, so
+# they have to be here at build time. The build fails on an empty set.
 RUN nuclei -update-templates \
     && [ -d "$HOME/nuclei-templates" ] \
     && [ -n "$(find "$HOME/nuclei-templates" -name '*.yaml' -print -quit)" ] \
@@ -145,24 +112,22 @@ RUN printf '%s\n' \
         > /usr/local/bin/nomore403 \
     && chmod +x /usr/local/bin/nomore403
 
-# --- sqlmap (git clone is upstream's recommended install; wrap with python3 so
-#     it does not depend on a bare `python` on PATH) ------------------------
+# sqlmap: the clone is upstream's recommended install, and the wrapper avoids
+# depending on a bare `python` on PATH.
 RUN git clone --depth 1 https://github.com/sqlmapproject/sqlmap /opt/sqlmap \
     && rm -rf /opt/sqlmap/.git \
     && printf '%s\n' '#!/bin/sh' 'exec python3 /opt/sqlmap/sqlmap.py "$@"' \
         > /usr/local/bin/sqlmap \
     && chmod +x /usr/local/bin/sqlmap
 
-# --- batchql (single script: python batch.py, needs requests + urllib3) ---
+# batchql is a single script and needs requests + urllib3.
 RUN git clone --depth 1 https://github.com/assetnote/batchql /opt/batchql \
     && rm -rf /opt/batchql/.git \
     && printf '%s\n' '#!/bin/sh' 'exec python3 /opt/batchql/batch.py "$@"' \
         > /usr/local/bin/batchql \
     && chmod +x /usr/local/bin/batchql
 
-# --- corsy (CORS misconfiguration: single script corsy.py). Give it its own
-#     venv so its deps never collide with the system interpreter. Detects the
-#     dangerous reflected-origin + credentials combination. -----------------
+# corsy gets its own venv so its deps never collide with the system ones.
 RUN git clone --depth 1 https://github.com/s0md3v/Corsy /opt/corsy \
     && rm -rf /opt/corsy/.git \
     && python3 -m venv /opt/corsy/.venv \
@@ -172,9 +137,7 @@ RUN git clone --depth 1 https://github.com/s0md3v/Corsy /opt/corsy \
     && chmod +x /usr/local/bin/corsy \
     && rm -rf /root/.cache
 
-# --- jwt_tool (DECODE/inspect JWTs and flag alg:none / weak signing; never
-#     used to crack or forge against a live service). venv with its runtime
-#     deps, wrapped like sqlmap. -----------------------------------------------
+# jwt_tool: own venv, wrapped like sqlmap.
 RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool /opt/jwt_tool \
     && rm -rf /opt/jwt_tool/.git \
     && python3 -m venv /opt/jwt_tool/.venv \
@@ -185,14 +148,8 @@ RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool /opt/jwt_tool \
     && /opt/jwt_tool/.venv/bin/python /opt/jwt_tool/jwt_tool.py -h >/dev/null \
     && rm -rf /root/.cache
 
-# --- SSTImap (server-side template injection: detection + exploitation, the
-#     maintained Python3 successor to tplmap). Own venv, wrapped like sqlmap so
-#     it does not need a bare `python` on PATH. Detects/exploits Jinja2, Twig,
-#     Freemarker, Velocity, Mako, Smarty and more; drives non-interactively
-#     (-u URL, plus --os-cmd / --os-shell / --eval-shell once an engine is
-#     confirmed). Python prepends the script's own dir to sys.path, so it finds
-#     its core/ and plugins/ packages from any working directory; the -h smoke
-#     test runs from /work to prove that before the image ships. --------------
+# SSTImap: own venv, wrapped like sqlmap. The -h smoke test runs from /work to
+# prove it finds its core/ and plugins/ packages from any working directory.
 RUN git clone --depth 1 https://github.com/vladko312/SSTImap /opt/sstimap \
     && rm -rf /opt/sstimap/.git \
     && python3 -m venv /opt/sstimap/.venv \
@@ -203,36 +160,26 @@ RUN git clone --depth 1 https://github.com/vladko312/SSTImap /opt/sstimap \
     && sstimap -h >/dev/null \
     && rm -rf /root/.cache
 
-# --- pipx apps: each isolated in its own venv, entrypoints on PATH ---------
-# bypass-url-parser (needs curl), arjun (param discovery), clairvoyance
-# (GraphQL schema recovery when introspection is off — pairs with batchql).
+# pipx apps: each isolated in its own venv, entrypoints on PATH.
 RUN pipx install bypass-url-parser \
     && pipx install arjun \
     && pipx install clairvoyance \
     && rm -rf /root/.cache
 
-# paramspider (hidden params mined from web archives) and git-dumper (rebuild an
-# exposed .git over plain GET requests — source exposure is a top-priority lead).
 RUN pipx install git+https://github.com/devanshbatham/paramspider.git \
     && pipx install git-dumper \
     && rm -rf /root/.cache
 
-# URL / JS side: uro (declutters URL lists: gau | uro), jsbeautifier (the
-# js-beautify CLI, to read minified sources), xnLinkFinder (endpoints, params
-# and words out of JS/HTML, from a URL, a file or a Burp export) and waymore
-# (gau's heavier sibling: more archive sources, can also fetch the archived
-# responses). Both xnl tools are git-only, no PyPI release.
+# waymore has no PyPI release, hence the git URL.
 RUN pipx install uro \
     && pipx install jsbeautifier \
     && pipx install git+https://github.com/xnl-h4ck3r/waymore.git \
     && rm -rf /root/.cache
 
-# xnLinkFinder declares playwright, which has no musl wheel (build fails on
-# Alpine). It is only imported lazily by --heap (browser heap snapshots), so
-# it gets a hand-made venv: the package without deps, then the rest of its
-# setup.py list explicitly. (pipx cannot do this: with --no-deps it aborts on
-# the missing dependency metadata.) --heap is therefore unsupported in this
-# image; everything else works. Keep the list in sync with upstream setup.py.
+# xnLinkFinder declares playwright, which has no musl wheel. It is only used
+# lazily by --heap, so install the package without deps and list the rest by
+# hand (pipx can't: --no-deps makes it abort on the missing metadata). --heap is
+# therefore unsupported here. Keep the list in sync with upstream setup.py.
 RUN python3 -m venv /opt/xnlinkfinder \
     && /opt/xnlinkfinder/bin/pip install --no-deps git+https://github.com/xnl-h4ck3r/xnLinkFinder.git \
     && /opt/xnlinkfinder/bin/pip install requests psutil pyyaml termcolor urlparse3 \
@@ -241,19 +188,16 @@ RUN python3 -m venv /opt/xnlinkfinder \
     && xnLinkFinder -h >/dev/null \
     && rm -rf /root/.cache
 
-# waymore writes results under DEFAULT_OUTPUT_DIR from its config (empty =>
-# ~/.config/waymore/, i.e. lost with the container). The config is generated
-# from code on first run, so run it once here and point the key at /work, so
-# results/<domain>/ lands on the host. Fail the build if the key is missing.
+# waymore writes to DEFAULT_OUTPUT_DIR from its config, which defaults to
+# ~/.config/waymore and would be lost with the container. The config is only
+# generated on first run, so run it once here and point it at /work.
 RUN waymore -h >/dev/null \
     && sed -i 's#^DEFAULT_OUTPUT_DIR:.*#DEFAULT_OUTPUT_DIR: /work#' /root/.config/waymore/config.yml \
     && grep -q '^DEFAULT_OUTPUT_DIR: /work$' /root/.config/waymore/config.yml \
     && rm -f /root/.config/waymore/config.yml.NEW \
     || { echo "ERROR: waymore config.yml not generated/patched" >&2; exit 1; }
 
-# gf reads its pattern files from ~/.gf (or ~/.config/gf). Bake a useful set:
-# tomnomnom's examples plus 1ndianl33t/Gf-Patterns. Fail the build if the
-# directory ends up empty, so a pattern-less gf can never ship.
+# gf reads its patterns from ~/.gf. The build fails if that ends up empty.
 RUN mkdir -p /root/.gf \
     && git clone --depth 1 https://github.com/tomnomnom/gf /tmp/gf \
     && git clone --depth 1 https://github.com/1ndianl33t/Gf-Patterns /tmp/gfp \
@@ -263,20 +207,11 @@ RUN mkdir -p /root/.gf \
     && [ -n "$(find /root/.gf -name '*.json' -print -quit)" ] \
     || { echo "ERROR: gf patterns not installed" >&2; exit 1; }
 
-# --- katana wrapper: headless always wired to the baked-in chromium ------
-# katana ships as katana.bin (renamed in the builder) and runs behind a wrapper.
-# Its headless engines only use a system browser when -system-chrome-path is
-# given (the pure -headless engine ignores -system-chrome entirely); otherwise
-# rod downloads a glibc chrome into ~/.cache/rod that cannot run on Alpine. So
-# whenever a browser mode is requested (-headless/-hl, -hybrid/-hh,
-# -system-chrome/-sc) the wrapper adds -system-chrome-path /usr/bin/chromium
-# and -no-sandbox (we run as root). It stays out of the way when the caller
-# already chose a browser (-system-chrome-path/-scp) or attaches to one
-# running elsewhere (-chrome-ws-url/-cwu). rod itself already passes
-# --disable-dev-shm-usage (docker's /dev/shm is 64MB) and katana --disable-gpu.
-# Verified at build time: katana exits 0 even when it cannot start, so grep its
-# log for an ERR line instead — a headless crawl of an unreachable URL must get
-# past browser startup (the only ERR a refused connection produces is none).
+# katana only uses a system browser when given -system-chrome-path; otherwise
+# rod downloads a glibc chrome that cannot run on Alpine. So the wrapper adds
+# that flag (plus -no-sandbox, we run as root) whenever a browser mode is asked
+# for, and stays out of the way if the caller already picked one. katana exits 0
+# even when it cannot start, so the check below greps its log for [ERR].
 RUN printf '%s\n' \
         '#!/bin/sh' \
         '# Point katana at the baked-in chromium whenever a browser mode is requested.' \

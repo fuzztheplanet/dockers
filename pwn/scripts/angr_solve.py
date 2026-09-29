@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # angr skeleton: reach FIND while avoiding AVOID, recover the input that does it.
 import angr
-import claripy
 import logging
+
+# angr >= 10 ships claripy itself; there is no separate package to install.
+from angr import claripy
 
 logging.getLogger("angr").setLevel(logging.ERROR)
 logging.getLogger("cle").setLevel(logging.ERROR)

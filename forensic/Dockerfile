@@ -3,11 +3,11 @@ FROM skw/base-archlinux
 RUN pacman --noconfirm -Syu --needed base-devel && \
     rm -rf /var/cache/pacman/pkg/*
 
-# Binwalk, foremost, vol3, tshark
+# Binwalk, foremost, vol3, tshark, unsquashfs
 RUN pacman --noconfirm -Syu --needed \
     binwalk foremost volatility3 \
     perl-image-exiftool \
-    libewf \
+    libewf squashfs-tools \
     wireshark-cli \
     python-minidump \
     python-pycryptodome python-termcolor \

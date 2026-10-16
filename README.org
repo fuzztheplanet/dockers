@@ -98,6 +98,7 @@ Contains a few forensic and stegano tools as well as custom volatility [[./foren
 - [[https://github.com/korczis/foremost][foremost]]
 - [[https://github.com/matro7sh/keepass-dump-masterkey][keepass-dump-masterkey]]
 - [[https://github.com/skelsec/minidump][minidump]]
+- [[https://github.com/plougher/squashfs-tools][squashfs-tools]] (unsquashfs)
 - [[https://github.com/volatilityfoundation/volatility3][volatility3]]
 - [[https://www.wireshark.org/docs/man-pages/tshark.html][wireshark-cli]]
 

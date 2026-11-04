@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec /root/.local/share/pipx/venvs/impacket/bin/python \
+    /root/tools/petitpotam/PetitPotam.py "$@"

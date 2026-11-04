@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tool="${0##*/}"
+case "$tool" in
+    *.py) ;;
+    *) tool="$tool.py" ;;
+esac
+
+exec /root/.local/share/pipx/venvs/impacket/bin/python \
+    "/root/tools/krbrelayx/$tool" "$@"

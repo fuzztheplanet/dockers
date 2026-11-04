@@ -38,20 +38,20 @@ fi
 ad-run() { drunhere --network=host skw/ad "$@"; }
 ad-runit() { drunithere --network=host skw/ad "$@"; }
 ad-shell() { dshellhere --network=host skw/ad "$@"; }
+ad-miner() { ad-runit AD-miner "$@"; }
 bloodhound-ce-python() { ad-runit bloodhound-ce-python "$@"; }
 bloodhound-python() { ad-runit bloodhound-python "$@"; }
 certipy() { ad-runit certipy "$@"; }
 coercer() { ad-runit coercer "$@"; }
-nxc() { drunithere -v "$(pwd)/.docker-ad-nxc:/root/.nxc" --network=host skw/ad nxc "$@"; }
-responder() {
-    drunithere -v "$(pwd)/.docker-ad-responder:/root/tools/responder/logs" skw/ad Responder.py "$@"
+donpapi() {
+    drunithere -v "$(pwd)/.docker-ad-donpapi:/root/.donpapi" --network=host skw/ad donpapi "$@"
 }
+krbrelayx() { ad-runit krbrelayx "$@"; }
+ldeep() { ad-runit ldeep "$@"; }
+nxc() { drunithere -v "$(pwd)/.docker-ad-nxc:/root/.nxc" --network=host skw/ad nxc "$@"; }
+petitpotam() { ad-runit petitpotam "$@"; }
 smbclient() { ad-runit smbclient "$@"; }
 smbserver() { ad-run smbserver.py -smb2support "$@"; }
-
-petitpotam() {
-    ad-shell -c '. /root/.local/share/pipx/venvs/impacket/bin/activate; PetitPotam.py "$@"' _ "$@"
-}
 
 
 # skw/bloodhound

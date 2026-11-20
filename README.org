@@ -25,7 +25,7 @@ image on the machine and every unused volume.
 
 Sourcing /aliases.sh/ defines a function for almost every tool in these images,
 and those functions shadow host binaries of the same name for the rest of the
-shell session: =sqlmap=, =smbclient=, =ffuf=, =gau=, =gf=, =semgrep=,
+shell session: =sqlmap=, =smbclient=, =ffuf=, =gau=, =gf=, =semgrep=, =codeql=,
 =trufflehog=, =nxc= and =vsftpd= among them. Use =command <tool>= to reach the
 host's own copy.
 
@@ -89,6 +89,96 @@ cd ~/projectB && bloodhound-run projectb 8712 7475 7688  # name, then custom por
 Each instance keeps its data under the current directory, in
 /.docker-bh-postgres/ and /.docker-bh-neo4j/, and is its own =docker compose=
 project — so several can run side by side.
+
+* codeql
+
+[[https://codeql.github.com/][CodeQL]], installed from GitHub's [[https://github.com/github/codeql-action/releases][codeql-bundle]]: the cli, every extractor, and
+the standard query packs already compiled, so the stock suites run without
+network access. Built on /base-debian/, the image also carries the toolchains
+that database creation calls: /python3/ and /node/ for the Python and
+JavaScript/TypeScript extractors, /gcc/, /clang/ and /cmake/ for C/C++, /go/ for
+Go, and a JDK with /maven/ for Java. C#, Rust and Swift are not set up. To move
+to a newer CodeQL, bump =CODEQL_VERSION= in the [[./codeql/Dockerfile][Dockerfile]].
+
+#+begin_src shell
+codeql-scan python                     # database + security-extended -> codeql-python.sarif
+codeql-scan java --build-mode=none     # compiled language, skip the build
+codeql-scan cpp --command='make -j8'   # compiled language, traced build
+codeql resolve database --format=json -- codeql-db-python | jq   # pipes work
+codeql-find-databases                  # real databases under $OUTPUT_DIR and ., as host paths
+codeql-find-databases ../other-proj    # roots outside $(pwd) work too
+codeql-findings                        # browse *.sarif here in fzf, most severe first
+codeql-findings -s high results.sarif  # only high and critical
+codeql-findings --list -p | less -R    # printed report, every data-flow step
+codeql-findings --summary              # counts per severity and per rule
+codeql-findings --html report.html     # full report: source, data flow, rule help
+codeql-findings --markdown report.md -s high   # the same as Markdown, high and critical only
+#+end_src
+
+=codeql-scan= takes the short language id (=cpp=, =java=, =javascript=,
+=python=, =go=, =ruby=), because that id also names the query pack, and hands
+any further arguments to =codeql database create=. Its SARIF includes source
+snippets and each rule's help (=--sarif-include-query-help=always=), which the
+reports below use.
+
+=codeql-find-databases= runs the skw-codeql skill's /find_databases.sh/ inside
+the image, where a real =codeql= binary is on PATH. On the host, =codeql= is only
+a function, and the script, as a child process, would not see it. It prints
+every database that =codeql resolve database= accepts under the given roots
+(default /$OUTPUT_DIR/, then the current directory), skipping the
+/codeql-database.yml/ a failed build leaves behind, and it runs in one container
+rather than one per candidate. Paths come out as host paths: a root outside the
+current directory is mounted read-only at its own path, and the one change in
+the [[./codeql/find_databases.sh][copy here]] maps //work/ back to the host. A newer version of the skill's
+script has to be copied over by hand and the image rebuilt.
+
+=codeql-findings= ([[./codeql/codeql-findings.py][codeql-findings.py]]) views the SARIF that =codeql database
+analyze= writes, by default every /*.sarif/ in the current directory. Findings
+are ordered by the rule's security-severity score, using GitHub's buckets
+(critical, high, medium, low), with results from non-security rules after them.
+The same finding in two files is shown once. In a terminal it opens /fzf/: typing
+filters the list, and the preview shows the rule, the source around the flagged
+span (highlighted) and every step of the data-flow path from source to sink.
+=enter= opens that view in /less/, =ctrl-e= opens the file at the line in /nano/,
+and =ctrl-/= toggles the preview. When piped, or with =--list=, it prints the
+same as a report instead. Source lines are read from the checkout, so run it from
+the directory that was scanned (or pass =--src=). Without the checkout, it falls
+back to the snippets in the SARIF, which =codeql-scan= includes.
+
+=--html FILE= and =--markdown FILE= export the full report instead, with the
+same filters (=-s=, =-r=):
+- a summary of counts per severity and per rule, and an index of findings
+- for each finding, its message, the source around it with the flagged span
+  highlighted (=-C N= lines either side, 3 by default), and every data-flow
+  path, each step with its own source line
+- a rules section with each rule's help: description, recommendation, examples
+  and references
+
+The HTML file is self-contained, with no external scripts, styles or fonts, so
+it opens offline and can be passed around as one file. It has search and
+severity filters, light and dark themes, and a print layout that expands
+everything. Everything taken from the SARIF or the source is escaped, so a
+hostile string in the scanned code shows as text. The Markdown version suits
+tickets and write-ups: a caret line marks the flagged span in each code block.
+Reports name the scanned directory by its host path, not //work/.
+
+The functions run the container as your uid rather than root, so databases and
+SARIF files in the current directory are yours to delete. That uid has no passwd
+entry in the image, and =HOME= is a scratch /home/codeql/ that goes away with
+the container: packs fetched with =codeql pack download=, and a build's
+dependencies, are downloaded again on every run. =dshellhere skw/codeql= gives a
+root shell instead.
+
+Like the [[*web][web]] wrappers, they only allocate a TTY when both stdin and stdout
+are terminals, so output can be piped and redirected, and they also run from a
+shell with no terminal, where ~-it~ would stop docker from starting.
+
+The CodeQL cli's licence covers open-source code and academic research; other
+code needs a GitHub Advanced Security licence.
+
+Commands: =codeql= (the cli), =codeql-scan= (=database create= then =database
+analyze= with the security-extended suite), =codeql-find-databases=,
+=codeql-findings= and =codeql-shell=.
 
 * forensic
 

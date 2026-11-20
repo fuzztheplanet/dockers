@@ -80,6 +80,65 @@ bloodhound-run() {
     unset NEO4J_DATA_MOUNT
 }
 
+# skw/codeql
+# Runs as your uid, not root, so databases and SARIF written to $(pwd) are yours.
+# TTY follows web-pipe's rule, -i always and -t only when stdin and stdout are
+# both terminals: `codeql ... | jq` gets plain LF output, and a caller with no
+# terminal, where -it makes docker refuse to start, still works.
+_codeql() {
+    local t=-i
+    [[ -t 0 && -t 1 ]] && t=-it
+    drun "$t" -u "$(id -u):$(id -g)" -v "$(pwd):/work" -w /work "$@"
+}
+codeql() { _codeql skw/codeql "$@"; }
+codeql-shell() { _codeql --entrypoint /bin/bash skw/codeql "$@"; }
+codeql-scan() {
+    # codeql-scan python                       interpreted, no build
+    # codeql-scan java --build-mode=none       compiled, skip the build
+    # codeql-scan cpp --command='make -j8'     compiled, traced build
+    # <lang> is the short id (cpp, java, javascript, python, go, ruby): it names
+    # the query pack as well as the language. The rest goes to database create.
+    if [[ $# -lt 1 ]]; then
+        printf 'usage: codeql-scan <lang> [database create args]\n' >&2
+        return 2
+    fi
+    local lang="$1"; shift
+    codeql database create "codeql-db-$lang" --language="$lang" --overwrite --threads=0 "$@" &&
+    codeql database analyze "codeql-db-$lang" --threads=0 \
+        --format=sarif-latest --sarif-add-snippets --sarif-include-query-help=always \
+        --output="codeql-$lang.sarif" \
+        -- "codeql/$lang-queries:codeql-suites/$lang-security-extended.qls"
+}
+codeql-find-databases() {
+    # codeql-find-databases                    "$OUTPUT_DIR" (if set) and .
+    # codeql-find-databases ../other-project   roots outside $(pwd) work too
+    # One real database per line, as host paths. Runs the skill's find_databases.sh
+    # inside the image in one container, instead of a container per candidate.
+    # Roots under $(pwd) are reached through /work; any other root is mounted
+    # read-only at its own path. Missing roots are skipped, as the script does.
+    local here orig v
+    local -a opts=() args=()
+    here=$(pwd -P)
+    opts=(-e "HOST_PWD=$here")
+    (( $# )) || set -- "${OUTPUT_DIR:-.}" .
+    for orig in "$@"; do
+        v=$(realpath -e -- "$orig" 2>/dev/null) || continue
+        case "$v" in
+            "$here"|"$here"/*) args+=("/work${v#"$here"}") ;;
+            *) opts+=(-v "$v:$v:ro"); args+=("$v") ;;
+        esac
+    done
+    (( ${#args[@]} )) || return 0
+    _codeql "${opts[@]}" --entrypoint find_databases.sh skw/codeql "${args[@]}"
+}
+# codeql-findings                          *.sarif here: fzf browser in a terminal
+# codeql-findings -s high results.sarif    high and critical only
+# codeql-findings --list -p | less -R      printed report, every data-flow step
+# codeql-findings --html report.html       full report: source, data flow, rule help
+# codeql-findings --markdown report.md     the same as Markdown
+# HOST_PWD lets reports name the scanned directory by its host path, not /work.
+codeql-findings() { _codeql -e "HOST_PWD=$(pwd -P)" --entrypoint codeql-findings skw/codeql "$@"; }
+
 # skw/forensic
 forensic-run() { drunhere skw/forensic "$@"; }
 forensic-runit() { drunithere skw/forensic "$@"; }

@@ -451,6 +451,12 @@ git-dumper() { web-pipe git-dumper "$@"; }
 trufflehog() { web-pipe trufflehog "$@"; }
 jwt_tool() { web-pipe jwt_tool "$@"; }
 
+# CMS fingerprinting. Typo3Scan: TYPO3 <= 11 / non-composer sites, advisories up to 2024
+#   typo3scan -d https://acme.com --vuln --no-interaction   core version + extensions with known SAs
+#   typo3scan --core 10.4.20                                 advisories for a core version, offline
+#   typo3scan --ext powermail:7.4.0                          ... and for an extension version
+typo3scan() { web-pipe typo3scan "$@"; }
+
 # Misc software / scripts
 evil-winrm() { drunit -v "$(pwd):/data" --network=host oscarakaelvis/evil-winrm "$@"; }
 mobsf() { drun -p 127.0.0.1:7011:8000 opensecurity/mobile-security-framework-mobsf:latest "$@"; }

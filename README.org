@@ -19,21 +19,18 @@ make DOCKER_CMD=podman           # build with podman instead of docker
 make web BUILD_ARGS=--no-cache   # extra flags passed to docker build
 #+end_src
 
-*Careful:* =make clean= is not scoped to this repository. It runs =docker system
-prune -a -f= and then =docker volume prune -a -f=, so it removes every unused
-image on the machine and every unused volume.
+*Careful:* =make clean= is not limited to this repo. It runs =docker system
+prune -a -f= and =docker volume prune -a -f=, so every unused image and volume
+on the machine is gone afterwards.
 
-Sourcing /aliases.sh/ defines a function for almost every tool in these images,
-and those functions shadow host binaries of the same name for the rest of the
-shell session: =sqlmap=, =smbclient=, =ffuf=, =gau=, =gf=, =semgrep=, =codeql=,
-=trufflehog=, =nxc= and =vsftpd= among them. Use =command <tool>= to reach the
-host's own copy.
+Sourcing /aliases.sh/ defines a function for almost every tool in these images.
+They shadow host binaries with the same name (=sqlmap=, =smbclient=, =ffuf=,
+=gf=, =semgrep=, =nxc=, ...) for the rest of the session. Use =command <tool>=
+if you want the host's version.
 
-The functions always pass ~-i~ but only allocate a TTY (~-t~) when stdin and
-stdout are both terminals. Interactive use keeps its prompts and colors, while
-pipes and redirections get plain LF output, and the functions also run from
-scripts, cron or another tool with no terminal at all, where ~-it~ would stop
-docker from starting.
+The functions always pass ~-i~, but ~-t~ only when stdin and stdout are both
+terminals. That way pipes and redirections get clean output, and the functions
+also work from scripts or cron, where ~-it~ would make docker refuse to start.
 
 * base-* images
 
@@ -76,35 +73,33 @@ available inside =ad-shell=.
 Lets you run several [[https://github.com/SpecterOps/BloodHound][BloodHound]] instances easily. This one is a
 =docker compose= project rather than one of the =make= images.
 
-Copy the example environment file first and set an admin password: there is no
-default for =bhe_default_admin_password=, and the first launch needs one.
+Copy the example env file first and set an admin password. There is no default
+for =bhe_default_admin_password= and the first start needs one.
 
 #+begin_src shell
 cp bloodhound/.env.example bloodhound/.env
 $EDITOR bloodhound/.env      # at minimum: bhe_default_admin_password=
 #+end_src
 
-Remaining defaults live in [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env.example][.env.example]]. The /.env/
-you copy it to is gitignored, so real secrets stay out of commits.
+The other defaults are in [[./bloodhound/docker-compose.yml][docker-compose.yml]] and [[./bloodhound/.env.example][.env.example]]. /.env/ itself is
+gitignored.
 
 #+begin_src shell
 cd ~/projectA && bloodhound-run                          # ports 8111 / 7474 / 7687
 cd ~/projectB && bloodhound-run projectb 8712 7475 7688  # name, then custom ports
 #+end_src
 
-Each instance keeps its data under the current directory, in
-/.docker-bh-postgres/ and /.docker-bh-neo4j/, and is its own =docker compose=
-project — so several can run side by side.
+Each instance keeps its data in /.docker-bh-postgres/ and /.docker-bh-neo4j/ in
+the current directory and is its own compose project, so several can run side
+by side.
 
 * codeql
 
-[[https://codeql.github.com/][CodeQL]], installed from GitHub's [[https://github.com/github/codeql-action/releases][codeql-bundle]]: the cli, every extractor, and
-the standard query packs already compiled, so the stock suites run without
-network access. Built on /base-debian/, the image also carries the toolchains
-that database creation calls: /python3/ and /node/ for the Python and
-JavaScript/TypeScript extractors, /gcc/, /clang/ and /cmake/ for C/C++, /go/ for
-Go, and a JDK with /maven/ for Java. C#, Rust and Swift are not set up. To move
-to a newer CodeQL, bump =CODEQL_VERSION= in the [[./codeql/Dockerfile][Dockerfile]].
+[[https://codeql.github.com/][CodeQL]] from GitHub's [[https://github.com/github/codeql-action/releases][codeql-bundle]]: the cli, all extractors and the standard
+query packs precompiled, so the stock suites run offline. It's based on
+/base-debian/ and includes the toolchains needed to create databases: /python3/,
+/node/, /gcc/, /clang/, /cmake/, /go/ and a JDK with /maven/. C#, Rust and Swift
+are not set up. To update CodeQL, bump =CODEQL_VERSION= in the [[./codeql/Dockerfile][Dockerfile]].
 
 #+begin_src shell
 codeql-scan python                     # database + security-extended -> codeql-python.sarif
@@ -122,58 +117,41 @@ codeql-findings --markdown report.md -s high   # the same as Markdown, high and 
 #+end_src
 
 =codeql-scan= takes the short language id (=cpp=, =java=, =javascript=,
-=python=, =go=, =ruby=), because that id also names the query pack, and hands
-any further arguments to =codeql database create=. Its SARIF includes source
-snippets and each rule's help (=--sarif-include-query-help=always=), which the
-reports below use.
+=python=, =go=, =ruby=) and passes everything else to =codeql database create=.
+The SARIF it writes includes source snippets and the rule help, which the
+reports below make use of.
 
 =codeql-find-databases= runs the skw-codeql skill's /find_databases.sh/ inside
-the image, where a real =codeql= binary is on PATH. On the host, =codeql= is only
-a function, and the script, as a child process, would not see it. It prints
-every database that =codeql resolve database= accepts under the given roots
-(default /$OUTPUT_DIR/, then the current directory), skipping the
-/codeql-database.yml/ a failed build leaves behind, and it runs in one container
-rather than one per candidate. Paths come out as host paths: a root outside the
-current directory is mounted read-only at its own path, and the one change in
-the [[./codeql/find_databases.sh][copy here]] maps //work/ back to the host. A newer version of the skill's
-script has to be copied over by hand and the image rebuilt.
+the image, since on the host =codeql= is only a function the script can't see.
+It lists every valid database under the given roots (default /$OUTPUT_DIR/, then
+the current directory), skips leftovers from failed builds and prints host
+paths instead of //work/ ones. That last part is the only change in the
+[[./codeql/find_databases.sh][copy here]], so a newer version of the skill's script has to be copied over
+by hand and the image rebuilt.
 
-=codeql-findings= ([[./codeql/codeql-findings.py][codeql-findings.py]]) views the SARIF that =codeql database
-analyze= writes, by default every /*.sarif/ in the current directory. Findings
-are ordered by the rule's security-severity score, using GitHub's buckets
-(critical, high, medium, low), with results from non-security rules after them.
-The same finding in two files is shown once. In a terminal it opens /fzf/: typing
-filters the list, and the preview shows the rule, the source around the flagged
-span (highlighted) and every step of the data-flow path from source to sink.
-=enter= opens that view in /less/, =ctrl-e= opens the file at the line in /nano/,
-and =ctrl-/= toggles the preview. When piped, or with =--list=, it prints the
-same as a report instead. Source lines are read from the checkout, so run it from
-the directory that was scanned (or pass =--src=). Without the checkout, it falls
-back to the snippets in the SARIF, which =codeql-scan= includes.
+=codeql-findings= ([[./codeql/codeql-findings.py][codeql-findings.py]]) is a viewer for the SARIF files, by
+default every /*.sarif/ in the current directory. Findings are sorted by
+severity (critical, high, medium, low, then non-security rules) and duplicates
+are shown once. In a terminal it opens /fzf/ with a preview of the rule, the
+highlighted source and the whole data-flow path. =enter= opens that in /less/,
+=ctrl-e= opens the file in /nano/ and =ctrl-/= toggles the preview. Piped or
+with =--list= it prints a report instead. Run it from the scanned directory (or
+pass =--src=) so it can read the source, otherwise it falls back to the
+snippets in the SARIF.
 
-=--html FILE= and =--markdown FILE= export the full report instead, with the
-same filters (=-s=, =-r=):
-- a summary of counts per severity and per rule, and an index of findings
-- for each finding, its message, the source around it with the flagged span
-  highlighted (=-C N= lines either side, 3 by default), and every data-flow
-  path, each step with its own source line
-- a rules section with each rule's help: description, recommendation, examples
-  and references
+=--html FILE= and =--markdown FILE= export the full report with the same
+filters (=-s=, =-r=): a summary per severity and rule, every finding with its
+source (=-C N= lines of context, default 3) and data-flow paths, and the help
+text of each rule. The HTML is a single file without external scripts or fonts,
+with search, severity filters, dark mode and a print layout. Everything from the
+SARIF and the source is escaped, so hostile strings in the scanned code stay
+text. The Markdown version is meant for tickets and write-ups. Both show host
+paths, not //work/.
 
-The HTML file is self-contained, with no external scripts, styles or fonts, so
-it opens offline and can be passed around as one file. It has search and
-severity filters, light and dark themes, and a print layout that expands
-everything. Everything taken from the SARIF or the source is escaped, so a
-hostile string in the scanned code shows as text. The Markdown version suits
-tickets and write-ups: a caret line marks the flagged span in each code block.
-Reports name the scanned directory by its host path, not //work/.
-
-The functions run the container as your uid rather than root, so databases and
-SARIF files in the current directory are yours to delete. That uid has no passwd
-entry in the image, and =HOME= is a scratch /home/codeql/ that goes away with
-the container: packs fetched with =codeql pack download=, and a build's
-dependencies, are downloaded again on every run. =dshellhere skw/codeql= gives a
-root shell instead.
+The functions run the container with your uid, so databases and SARIF files
+belong to you. =HOME= is a throwaway /home/codeql/ though, so packs from
+=codeql pack download= and build dependencies are downloaded again on every
+run. =dshellhere skw/codeql= gives you a root shell.
 
 The CodeQL cli's licence covers open-source code and academic research; other
 code needs a GitHub Advanced Security licence.
@@ -201,26 +179,21 @@ Contains a few forensic and stegano tools as well as custom volatility [[./foren
 Commands: =forensic-run=, =forensic-runit=, =forensic-shell=, and =volatility=
 (/vol/ with the bundled symbols already on its search path).
 
-/tshark/ live captures work with the default container capabilities, and a
-capture written into the current directory belongs to you on the host:
+/tshark/ live captures work with the default container capabilities, and the
+capture files belong to you on the host:
 
 #+begin_src shell
 forensic-run tshark -i eth0 -a duration:60 -w capture.pcapng   # yours, not root's
 forensic-run tshark -r capture.pcapng -Y http -w http.pcapng   # offline, readable as before
 #+end_src
 
-Live captures are written by /dumpcap/, which creates its files with mode 0600
-and, run as root, cannot create files in a directory root does not own. The
-image therefore replaces /dumpcap/ with a [[./forensic/files/dumpcap][wrapper]] that runs a capture as the
-owner of the directory named by =-w=, which in //work/ is the host user. That
-covers ring-buffer files (=-b=) too. A capture to stdout, or to a root-owned
-directory such as //tmp/, still runs as root. The real /dumpcap/ keeps only the
-=cap_net_raw= file capability: Arch's package also grants =cap_net_admin=, which
-docker does not give a container by default, and with it the kernel refused to
-start /dumpcap/ at all. The container shares the host's network only if you add
-~--network=host~; otherwise /eth0/ is the
-container's own interface. The wrappers put their arguments after the image
-name, so use =dshellhere --network=host skw/forensic= for that.
+For this, /dumpcap/ is replaced by a [[./forensic/files/dumpcap][wrapper]] that runs the capture as the owner
+of the =-w= directory (ring buffers with =-b= included). Captures to stdout or
+to a root-owned directory like //tmp/ still run as root. The real /dumpcap/ only
+keeps =cap_net_raw=: Arch also sets =cap_net_admin=, which docker doesn't grant
+by default, and the kernel then refuses to start it. /eth0/ is the container's
+own interface unless you use ~--network=host~. The wrappers put their arguments
+after the image name, so use =dshellhere --network=host skw/forensic= for that.
 
 * http-server
 
@@ -243,7 +216,7 @@ and JRE as well as some other common tools:
 - [[https://github.com/mbechler/marshalsec][marshalsec]]
 - [[https://github.com/frohoff/ysoserial][ysoserial]]
 
-Commands: =jdeserialize=, =marshalsec=, =ysoserial= — each runs against the
+Commands: =jdeserialize=, =marshalsec= and =ysoserial=, all run against the
 current directory.
 
 The default =java= is the newest JDK installed. /ysoserial/ does not work on it,
@@ -294,19 +267,16 @@ Various pwn tools and python libs for CTF:
 - [[https://www.sagemath.org/][sagemath]]
 
 Commands: =pwn-run=, =pwn-runit=, =pwn-shell=. They start the container with
-~--network=host~ and ~--security-opt seccomp=unconfined~. Docker's default
-seccomp profile blocks the =personality()= call that /gdb/ uses to turn ASLR off
-for the program it starts, so without it gdb prints "Error disabling address
-space randomization" and addresses change on every run. The flag lifts all of
-docker's syscall filtering for the container, which also runs the binaries under
-test. Inside the image, =gdb-pwndbg=
-and =gdb-gef= start /gdb/ with the corresponding plugin; the bundled [[./pwn/files/gdbinit][gdbinit]]
-also defines =openredir <file>= to redirect the inferior's stdin/stdout/stderr
-to a file.
+~--network=host~ and ~--security-opt seccomp=unconfined~. The latter is needed
+because docker's seccomp profile blocks =personality()=, so gdb can't disable
+ASLR ("Error disabling address space randomization"). Keep in mind that it
+turns off syscall filtering for everything in the container, including the
+binaries you test. =gdb-pwndbg= and =gdb-gef= start /gdb/ with the corresponding
+plugin, and the bundled [[./pwn/files/gdbinit][gdbinit]] adds =openredir <file>= to redirect the
+inferior's stdin/stdout/stderr to a file.
 
-The image also ships a =pwn-init= command and two templates ([[./pwn/scripts/solve.py][solve.py]] and
-[[./pwn/scripts/utils.py][utils.py]]) to bootstrap a challenge. =pwn-init= copies both into the current
-directory (the mounted //work/), which is the first step for any challenge:
+There's also =pwn-init= and two templates ([[./pwn/scripts/solve.py][solve.py]] and [[./pwn/scripts/utils.py][utils.py]]) to
+bootstrap a challenge. =pwn-init= copies both into the current directory:
 
 #+begin_src shell
 pwn-shell                 # interactive shell, $(pwd) mounted at /work
@@ -316,11 +286,9 @@ pwn-init                  # drop solve.py + utils.py in the working directory
                           # pwn-init -s     also copy the solver skeletons
 #+end_src
 
-Edit /solve.py/ and set =BINARY=, =HOST=/=PORT= and the =SSH_*= block as
-appropriate. Two more knobs sit further down the file: =context.gdb_binary=
-chooses =gdb-pwndbg= or =gdb-gef=, and the =gdbscript= string holds the commands
-gdb runs on attach. =GDB=, =REMOTE= and =SSH= below are command-line modes, not
-variables to set:
+Then set =BINARY=, =HOST=/=PORT= and the =SSH_*= block in /solve.py/. Further
+down, =context.gdb_binary= picks =gdb-pwndbg= or =gdb-gef= and =gdbscript= holds
+the commands gdb runs on attach. The modes are passed on the command line:
 
 #+begin_src shell
 python3 solve.py          # run the binary locally
@@ -331,8 +299,8 @@ python3 solve.py SSH GDB  # debug it on the remote box via gdbserver
 #+end_src
 
 The =GDB= modes open gdb in a /tmux/ split, so start /tmux/ inside =pwn-shell=
-first. Without it /solve.py/ writes the gdb commands to /.gdbscript/ and prints
-the =gdb -p <pid> -x .gdbscript= line to attach by hand.
+first. Otherwise /solve.py/ writes the commands to /.gdbscript/ and prints a
+=gdb -p <pid> -x .gdbscript= line so you can attach by hand.
 
 With =-s=, =pwn-init= also copies three solver skeletons: [[./pwn/scripts/angr_solve.py][angr_solve.py]],
 [[./pwn/scripts/z3_solve.py][z3_solve.py]] and [[./pwn/scripts/sage_solve.py][sage_solve.py]].
@@ -402,8 +370,8 @@ recon-shell        # interactive shell inside the image
 
 ** Configuration
 
-API keys widen /gimmesubs/' passive phase. Every value is optional and a source
-is only queried when its key is set:
+API keys add more passive sources to /gimmesubs/. They're all optional, a
+source is only used when its key is set:
 
 #+begin_src shell
 cp recon/.env.example recon/.env
@@ -417,12 +385,12 @@ cp recon/config/subfinder-provider-config.yaml.example \
    recon/config/subfinder-provider-config.yaml
 #+end_src
 
-Both files are gitignored. The wrappers bind-mount /recon/config/ read-only into
-the container, so edits there take effect without rebuilding the image.
+Both files are gitignored and mounted read-only into the container, so changes
+don't need a rebuild.
 
-Wordlists are not baked in. Point =RECON_WORDLISTS= at a directory (it defaults
-to /recon/wordlists/) and the wrappers mount it read-only at //wordlists/, which
-also lets you pass a bare name instead of a path:
+Wordlists are not baked in. Point =RECON_WORDLISTS= at a directory (default
+/recon/wordlists/) and it gets mounted at //wordlists/, so you can pass just a
+name instead of a path:
 
 #+begin_src shell
 export RECON_WORDLISTS=~/lists
@@ -430,31 +398,28 @@ gimmesubs -a acme.com big      # resolves to /wordlists/big.txt
 gimmesubs -a acme.com dns      # a directory of lists works too
 #+end_src
 
-Rates and timeouts are environment variables, forwarded to the container when
-set: =PASSIVE_TIMEOUT= (seconds per passive source), =HTTPX_THREADS=,
-=HTTPX_TIMEOUT=, =HTTPX_RUN_TIMEOUT=, =NUCLEI_RATE_LIMIT=, =NUCLEI_CONCURRENCY=,
+Rates and timeouts can be set with environment variables: =PASSIVE_TIMEOUT=
+(seconds per passive source), =HTTPX_THREADS=, =HTTPX_TIMEOUT=,
+=HTTPX_RUN_TIMEOUT=, =NUCLEI_RATE_LIMIT=, =NUCLEI_CONCURRENCY=,
 =NUCLEI_RUN_TIMEOUT= and =NUCLEI_EXCLUDE_TAGS=.
 
 * semgrep
 
 Docker installation of [[https://github.com/semgrep/semgrep][semgrep's]] cli with support for the pro version.
 
-The pro engine needs an authenticated account, so the build runs =semgrep login=
-and waits for you to open the URL it prints. Two things follow from that: the
-build is interactive, and the token it obtains is written into an image layer,
-where removing it afterwards does not get it back out. Passing
-=SEMGREP_APP_TOKEN= in at runtime keeps it out of the image entirely.
+The pro engine needs an account, so the build runs =semgrep login= and waits
+until you open the URL it prints. This means the build is interactive and the
+token ends up in an image layer. Passing =SEMGREP_APP_TOKEN= at runtime keeps it
+out of the image.
 
-To skip the pro engine, comment out *both* lines in the [[./semgrep/Dockerfile][Dockerfile]]:
-=semgrep login= and =semgrep install-semgrep-pro=. Commenting only the first
-leaves the install with no credentials and the build fails.
+To skip pro, comment out *both* =semgrep login= and =semgrep install-semgrep-pro=
+in the [[./semgrep/Dockerfile][Dockerfile]]. With only the first one commented out the build fails.
 
 Commands: =semgrep= (the cli), =semgrep-pro-scan= (=semgrep scan --pro= with the
 flags I use) and =semgrep-shell=.
 
-=semgrep-pro-scan= passes ~--metrics=off~ unless you give your own ~--metrics~
-option (semgrep refuses it twice). ~--config auto~ needs ~--metrics=on~:
-semgrep will not build the automatic config with metrics off.
+=semgrep-pro-scan= adds ~--metrics=off~ unless you pass ~--metrics~ yourself.
+Note that ~--config auto~ only works with ~--metrics=on~.
 
 * vsftpd
 
@@ -513,19 +478,17 @@ Takeover, CORS, secret & source exposure, JWT:
 - [[https://github.com/PentestPad/subzy][subzy]]
 - [[https://github.com/trufflesecurity/trufflehog][trufflehog]]
 
-Template-driven detection and DNS:
+Template-driven detection, CMS fingerprinting and DNS:
 
 - [[https://github.com/projectdiscovery/nuclei][nuclei]] (full template set baked into the image)
+- [[https://github.com/whoot/Typo3Scan][Typo3Scan]] (TYPO3 version, extensions and known advisories)
 - /dig/ and /host/ from [[https://www.isc.org/bind/][bind-tools]] (DNS lookups, =AXFR= checks)
 
-Commands: =web-run=, =web-runit=, =web-shell= for the container itself, plus a
-wrapper named after every tool above except /nuclei/, /dig/ and /host/ — reach
-those with =web-run nuclei ...= or from =web-shell=. Each mounts the current
-directory at //work/. Host networking is opt-in: set =WEB_NETWORK_HOST= to 1 to
-add ~--network=host~ (needed only to reach a /localhost/ or /127.0.0.1/ target
-on the host); remote targets use the default bridge. Like every wrapper here,
-they only allocate a TTY when both stdin and stdout are terminals, so they can
-be chained with pipes and redirections like the native binaries:
+Commands: =web-run=, =web-runit=, =web-shell=, and a wrapper for every tool
+above except /nuclei/, /dig/ and /host/ (use =web-run nuclei ...= or =web-shell=
+for those). The current directory is mounted at //work/. Set =WEB_NETWORK_HOST=
+to 1 if you need ~--network=host~, e.g. to reach a target on the host's
+/localhost/. The wrappers can be piped and redirected like the real binaries:
 
 #+begin_src shell
 echo acme.com | gau | uro | anew urls.txt                # known URLs, deduped
@@ -541,12 +504,11 @@ cat urls.txt | gf xss | qsreplace FUZZ | anew xss.txt    # gf pattern -> one pay
 cat urls.txt | dalfox pipe                               # scan a URL list for XSS
 #+end_src
 
-/gf/ ships tomnomnom's example patterns plus /Gf-Patterns/ (=gf -list= shows
-them), so =gf xss=, =gf ssrf=, =gf redirect= and the rest work out of the box.
+/gf/ comes with tomnomnom's example patterns and /Gf-Patterns/ (see =gf -list=),
+so =gf xss=, =gf ssrf= etc. work out of the box.
 
-/SSTImap/ detects and exploits server-side template injection (Jinja2, Twig,
-Freemarker, Velocity, Mako, Smarty and more). Point it at a reflecting
-parameter; once it confirms an engine it can run commands or drop a shell:
+/SSTImap/ finds and exploits server-side template injection (Jinja2, Twig,
+Freemarker, Velocity, Mako, Smarty, ...):
 
 #+begin_src shell
 sstimap -u 'https://acme.com/page?name=John'      # detect the engine
@@ -566,33 +528,47 @@ trufflehog filesystem dump/ --no-verification    # secrets in the dumped source,
 jwt_tool <token>                                 # decode/inspect a JWT (alg:none, weak signing)
 #+end_src
 
-Run /trufflehog/ with =--no-verification= so it flags candidate secrets without
-validating them against the live service, and treat the subdomain lists you feed
-/subzy/ as scope input, not an invitation to scan out of scope.
+Use =--no-verification= with /trufflehog/, otherwise it tries found secrets
+against the live service. And only feed /subzy/ subdomains that are in scope.
 
-/nuclei/ carries its full template set, baked in at build time, so scans run
-offline with =-disable-update-check=; rebuild the image when you want fresher
-templates.
+/nuclei/ templates are baked in at build time, so scans work with
+=-disable-update-check=. Rebuild the image to get newer ones.
 
-/nomore403/ reads its payload lists from a folder; the image ships them and the
-wrapper points at them automatically unless you pass your own =-f/--folder=.
+/Typo3Scan/ finds the TYPO3 version, backend login and installed extensions,
+and shows known advisories for them:
 
-/xnLinkFinder/ needs a scope with =-sf= and, upstream, reads stdin whenever stdin
-is not a terminal, even with =-i=. Its wrapper therefore keeps a TTY as long as
-stdin is one; take the results from =-o=/=-op= (or =output.txt=) rather than a
-redirected stdout, and pipe a URL list into it instead of =-i= for batches.
+#+begin_src shell
+typo3scan -d https://acme.com --vuln --no-interaction   # only extensions with known advisories
+typo3scan -d https://acme.com --json acme-t3.json       # all ~8800 extensions
+typo3scan --core 10.4.20                                 # advisories for a core version, offline
+typo3scan --ext powermail:7.4.0                          # same for an extension
+#+end_src
 
-/waymore/ writes to =results/<domain>/= under the current directory (the image's
-config sets =DEFAULT_OUTPUT_DIR= to //work/). Default mode /B/ also downloads
-every archived response, which is slow and large; =-mode U= for URLs only.
+The project is unmaintained (1.2 was the last release), so don't trust it
+blindly. It doesn't work on TYPO3 v12+ composer installs, extension versions
+are only guesses, and the advisory database stops in 2024 (=--update= is
+broken). Check the [[https://typo3.org/help/security-advisories][advisory list]] for newer ones. Two upstream bugs are patched
+in the Dockerfile. Each scan writes =typo3scan.json= to the current directory
+unless you pass =--json=. Use that if you want to parse the results, stdout is
+full of colors and progress bars.
 
-/katana/ =-headless= (and =-hybrid=) run on a chromium baked into the image
-(about 760MB of it), so DOM-rendered SPAs crawl on any host, servers without a
-browser included. The wrapper adds
-=-system-chrome-path /usr/bin/chromium -no-sandbox= whenever a browser mode is
-requested, which keeps katana from downloading its own glibc chrome (it cannot
-run on Alpine); pass your own
-=-system-chrome-path= or =-chrome-ws-url= and the wrapper stays out of the way.
+/nomore403/ uses the payloads shipped in the image unless you pass your own
+=-f/--folder=.
+
+/xnLinkFinder/ needs a scope (=-sf=) and reads stdin whenever it isn't a
+terminal, even with =-i=. So its wrapper keeps the TTY as long as stdin is one.
+Take the results from =-o=/=-op= (or =output.txt=) instead of redirecting
+stdout, and pipe URL lists into it instead of using =-i=.
+
+/waymore/ writes to =results/<domain>/= in the current directory. The default
+mode /B/ also downloads every archived response, which is slow and big, so use
+=-mode U= if you only want URLs.
+
+/katana/ =-headless= and =-hybrid= use the chromium baked into the image (about
+760MB), so SPAs can be crawled on servers without a browser too. In browser mode
+the wrapper adds =-system-chrome-path /usr/bin/chromium -no-sandbox=, otherwise
+katana downloads its own chrome, which doesn't run on Alpine. If you pass
+=-system-chrome-path= or =-chrome-ws-url= yourself, the wrapper leaves it alone.
 
 #+begin_src shell
 katana -u https://acme.com -headless -jc -o katana.txt   # render JS, crawl the DOM
@@ -600,9 +576,8 @@ katana -u https://acme.com -headless -jc -o katana.txt   # render JS, crawl the 
 
 * other images
 
-[[./aliases.sh][aliases.sh]] also wraps a handful of images that are not built here. Docker pulls
-them from their own registries on first use, so =make= does not cover them and
-=make clean= will remove them again:
+[[./aliases.sh][aliases.sh]] also wraps a few images that aren't built here. Docker pulls them on
+first use, so =make= doesn't cover them and =make clean= removes them again:
 
 #+begin_src shell
 evil-winrm -i 10.0.0.5 -u user -p pass   # $(pwd) at /data, host networking

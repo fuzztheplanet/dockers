@@ -70,7 +70,7 @@ RUN git clone --depth 1 https://github.com/trufflesecurity/trufflehog /tmp/truff
 FROM skw/base-alpine
 
 LABEL org.opencontainers.image.title="web" \
-      org.opencontainers.image.description="web app testing CLI tools: ffuf, nomore403, sqlmap, sstimap, bypass-url-parser, batchql, arjun, paramspider, clairvoyance, katana, gau, waymore, uro, subjs, jsluice, xnLinkFinder, sourcemapper, js-beautify, anew, unfurl, qsreplace, gf, dalfox, nuclei, subzy, Gxss, kxss, corsy, git-dumper, trufflehog, jwt_tool, dig"
+      org.opencontainers.image.description="web app testing CLI tools: ffuf, nomore403, sqlmap, sstimap, bypass-url-parser, batchql, arjun, paramspider, clairvoyance, katana, gau, waymore, uro, subjs, jsluice, xnLinkFinder, sourcemapper, js-beautify, anew, unfurl, qsreplace, gf, dalfox, nuclei, typo3scan, subzy, Gxss, kxss, corsy, git-dumper, trufflehog, jwt_tool, dig"
 
 # /root/.local/bin: where pipx exposes app entrypoints.
 ENV HOME=/root \
@@ -158,6 +158,28 @@ RUN git clone --depth 1 https://github.com/vladko312/SSTImap /opt/sstimap \
         > /usr/local/bin/sstimap \
     && chmod +x /usr/local/bin/sstimap \
     && sstimap -h >/dev/null \
+    && rm -rf /root/.cache
+
+# Typo3Scan: own venv, wrapped like sqlmap. Upstream is frozen (1.2 is final),
+# so two patches are safe to carry: setuptools >= 81 dropped pkg_resources
+# (packaging.version.parse is what its parse_version wrapped), and --core/--ext
+# opened lib/typo3scan.db relative to the cwd instead of the absolute path the
+# script already computes. The --core smoke test runs from /work and needs an
+# advisory out of the bundled DB, so it proves both. --update cannot refresh
+# that DB: its typo3.org scraper no longer matches the advisory pages.
+RUN git clone --depth 1 https://github.com/whoot/Typo3Scan /opt/typo3scan \
+    && rm -rf /opt/typo3scan/.git \
+    && sed -i 's/^from pkg_resources import parse_version$/from packaging.version import parse as parse_version/' \
+           /opt/typo3scan/typo3scan.py /opt/typo3scan/lib/*.py \
+    && sed -i "s#sqlite3.connect('lib/typo3scan.db')#sqlite3.connect(database)#" /opt/typo3scan/typo3scan.py \
+    && ! grep -rqE "pkg_resources|connect\('lib/" /opt/typo3scan/typo3scan.py /opt/typo3scan/lib \
+    && python3 -m venv /opt/typo3scan/.venv \
+    && /opt/typo3scan/.venv/bin/pip install -r /opt/typo3scan/requirements.txt packaging \
+    && printf '%s\n' '#!/bin/sh' 'exec /opt/typo3scan/.venv/bin/python /opt/typo3scan/typo3scan.py "$@"' \
+        > /usr/local/bin/typo3scan \
+    && chmod +x /usr/local/bin/typo3scan \
+    && typo3scan --core 8.7.0 | grep -q 'TYPO3-CORE-SA-' \
+    || { echo "ERROR: typo3scan patches or install failed" >&2; exit 1; } \
     && rm -rf /root/.cache
 
 # pipx apps: each isolated in its own venv, entrypoints on PATH.

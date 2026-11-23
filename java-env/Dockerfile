@@ -17,14 +17,15 @@ RUN git clone --depth 1 https://github.com/mbechler/marshalsec/ /root/tools/mars
         > /usr/local/bin/marshalsec && \
     chmod +x /usr/local/bin/marshalsec
 
-# Ysoserial
+# Ysoserial: built and run on JDK 8. It fails on the newer JDK that the last step
+# makes the default, so the wrapper names JDK 8's java instead of the one on PATH.
 RUN git clone --depth 1 https://github.com/frohoff/ysoserial /root/tools/ysoserial && \
     cd /root/tools/ysoserial && \
-    mvn clean package -DskipTests && \
+    JAVA_HOME=/usr/lib/jvm/java-8-openjdk mvn clean package -DskipTests && \
     rm -rf ~/.m2/repository && \
     printf '%s\n' \
         '#!/usr/bin/env bash' \
-        'exec java -jar /root/tools/ysoserial/target/ysoserial-*-all.jar "$@"' \
+        'exec /usr/lib/jvm/java-8-openjdk/bin/java -jar /root/tools/ysoserial/target/ysoserial-*-all.jar "$@"' \
         > /usr/local/bin/ysoserial && \
     chmod +x /usr/local/bin/ysoserial
 

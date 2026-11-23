@@ -29,6 +29,12 @@ shell session: =sqlmap=, =smbclient=, =ffuf=, =gau=, =gf=, =semgrep=, =codeql=,
 =trufflehog=, =nxc= and =vsftpd= among them. Use =command <tool>= to reach the
 host's own copy.
 
+The functions always pass ~-i~ but only allocate a TTY (~-t~) when stdin and
+stdout are both terminals. Interactive use keeps its prompts and colors, while
+pipes and redirections get plain LF output, and the functions also run from
+scripts, cron or another tool with no terminal at all, where ~-it~ would stop
+docker from starting.
+
 * base-* images
 
 These are the custom images that I use as base for other images. They contain
@@ -169,10 +175,6 @@ the container: packs fetched with =codeql pack download=, and a build's
 dependencies, are downloaded again on every run. =dshellhere skw/codeql= gives a
 root shell instead.
 
-Like the [[*web][web]] wrappers, they only allocate a TTY when both stdin and stdout
-are terminals, so output can be piped and redirected, and they also run from a
-shell with no terminal, where ~-it~ would stop docker from starting.
-
 The CodeQL cli's licence covers open-source code and academic research; other
 code needs a GitHub Advanced Security licence.
 
@@ -199,6 +201,27 @@ Contains a few forensic and stegano tools as well as custom volatility [[./foren
 Commands: =forensic-run=, =forensic-runit=, =forensic-shell=, and =volatility=
 (/vol/ with the bundled symbols already on its search path).
 
+/tshark/ live captures work with the default container capabilities, and a
+capture written into the current directory belongs to you on the host:
+
+#+begin_src shell
+forensic-run tshark -i eth0 -a duration:60 -w capture.pcapng   # yours, not root's
+forensic-run tshark -r capture.pcapng -Y http -w http.pcapng   # offline, readable as before
+#+end_src
+
+Live captures are written by /dumpcap/, which creates its files with mode 0600
+and, run as root, cannot create files in a directory root does not own. The
+image therefore replaces /dumpcap/ with a [[./forensic/files/dumpcap][wrapper]] that runs a capture as the
+owner of the directory named by =-w=, which in //work/ is the host user. That
+covers ring-buffer files (=-b=) too. A capture to stdout, or to a root-owned
+directory such as //tmp/, still runs as root. The real /dumpcap/ keeps only the
+=cap_net_raw= file capability: Arch's package also grants =cap_net_admin=, which
+docker does not give a container by default, and with it the kernel refused to
+start /dumpcap/ at all. The container shares the host's network only if you add
+~--network=host~; otherwise /eth0/ is the
+container's own interface. The wrappers put their arguments after the image
+name, so use =dshellhere --network=host skw/forensic= for that.
+
 * http-server
 
 Basic HTTP(S) Python [[https://pypi.org/project/uploadserver/][uploadserver]]. It serves the volume mounted under //work/ on
@@ -222,6 +245,9 @@ and JRE as well as some other common tools:
 
 Commands: =jdeserialize=, =marshalsec=, =ysoserial= — each runs against the
 current directory.
+
+The default =java= is the newest JDK installed. /ysoserial/ does not work on it,
+so its wrapper runs JDK 8's =java= directly, whatever the default is.
 
 * jazzer
 
@@ -267,7 +293,13 @@ Various pwn tools and python libs for CTF:
 - [[https://github.com/Z3Prover/z3][z3]]
 - [[https://www.sagemath.org/][sagemath]]
 
-Commands: =pwn-run=, =pwn-runit=, =pwn-shell=. Inside the image, =gdb-pwndbg=
+Commands: =pwn-run=, =pwn-runit=, =pwn-shell=. They start the container with
+~--network=host~ and ~--security-opt seccomp=unconfined~. Docker's default
+seccomp profile blocks the =personality()= call that /gdb/ uses to turn ASLR off
+for the program it starts, so without it gdb prints "Error disabling address
+space randomization" and addresses change on every run. The flag lifts all of
+docker's syscall filtering for the container, which also runs the binaries under
+test. Inside the image, =gdb-pwndbg=
 and =gdb-gef= start /gdb/ with the corresponding plugin; the bundled [[./pwn/files/gdbinit][gdbinit]]
 also defines =openredir <file>= to redirect the inferior's stdin/stdout/stderr
 to a file.
@@ -420,6 +452,10 @@ leaves the install with no credentials and the build fails.
 Commands: =semgrep= (the cli), =semgrep-pro-scan= (=semgrep scan --pro= with the
 flags I use) and =semgrep-shell=.
 
+=semgrep-pro-scan= passes ~--metrics=off~ unless you give your own ~--metrics~
+option (semgrep refuses it twice). ~--config auto~ needs ~--metrics=on~:
+semgrep will not build the automatic config with metrics off.
+
 * vsftpd
 
 Exposes a FTP server via [[https://security.appspot.com/vsftpd.html][vsftpd]] on port 21 (and ports 30000-30009 for passive
@@ -487,9 +523,9 @@ wrapper named after every tool above except /nuclei/, /dig/ and /host/ — reach
 those with =web-run nuclei ...= or from =web-shell=. Each mounts the current
 directory at //work/. Host networking is opt-in: set =WEB_NETWORK_HOST= to 1 to
 add ~--network=host~ (needed only to reach a /localhost/ or /127.0.0.1/ target
-on the host); remote targets use the default bridge. The wrappers only allocate a
-TTY when both stdin and stdout are terminals, so they can be chained with pipes
-and redirections like the native binaries:
+on the host); remote targets use the default bridge. Like every wrapper here,
+they only allocate a TTY when both stdin and stdout are terminals, so they can
+be chained with pipes and redirections like the native binaries:
 
 #+begin_src shell
 echo acme.com | gau | uro | anew urls.txt                # known URLs, deduped

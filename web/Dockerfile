@@ -210,9 +210,13 @@ RUN mkdir -p /root/.gf \
 # katana only uses a system browser when given -system-chrome-path; otherwise
 # rod downloads a glibc chrome that cannot run on Alpine. So the wrapper adds
 # that flag (plus -no-sandbox, we run as root) whenever a browser mode is asked
-# for, and stays out of the way if the caller already picked one. katana exits 0
-# even when it cannot start, so the check below greps its log for [ERR].
-RUN printf '%s\n' \
+# for, and stays out of the way if the caller already picked one. The real binary
+# moves to katana.bin first, or the wrapper would overwrite it. katana -version
+# checks the wrapper reaches it: the headless check cannot, since katana exits 0
+# even when it cannot start (hence the grep for [ERR]) and a failed exec prints
+# no [ERR] at all.
+RUN mv /usr/local/bin/katana /usr/local/bin/katana.bin \
+    && printf '%s\n' \
         '#!/bin/sh' \
         '# Point katana at the baked-in chromium whenever a browser mode is requested.' \
         'browser=0; chosen=0' \
@@ -228,6 +232,8 @@ RUN printf '%s\n' \
         'exec /usr/local/bin/katana.bin "$@"' \
         > /usr/local/bin/katana \
     && chmod +x /usr/local/bin/katana \
+    && { katana -version >/dev/null 2>&1 \
+         || { echo "ERROR: the katana wrapper cannot run katana.bin" >&2; exit 1; } ; } \
     && katana -headless -u http://127.0.0.1:9/ -timeout 2 -disable-update-check -no-color 2>&1 \
        | tee /tmp/katana-headless.log | { ! grep -q '\[ERR\]' ; } \
     || { cat /tmp/katana-headless.log >&2; echo "ERROR: katana -headless cannot launch the baked-in chromium" >&2; exit 1; } \

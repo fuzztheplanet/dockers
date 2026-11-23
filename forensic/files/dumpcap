@@ -1,0 +1,36 @@
+#!/bin/bash
+# dumpcap wrapper for skw/forensic. It sits at /usr/bin/dumpcap because tshark
+# runs the dumpcap next to its own binary, so tshark's live captures go through
+# here too. The real dumpcap is /usr/local/libexec/dumpcap.
+#
+# Live captures are written by dumpcap, never by tshark, and dumpcap creates
+# its files with mode 0600. As root it also drops every capability except
+# NET_RAW and NET_ADMIN before it opens them, DAC_OVERRIDE included, so it
+# cannot even create a file in a bind-mounted host directory that root does
+# not own. So when the output (-w FILE) goes to a directory owned by another
+# user, the capture runs as that user instead. In /work that is the host user,
+# who then owns every file written, ring-buffer files included, and can read
+# them from the host. Anything else (no -w, -w -, a root-owned directory such
+# as /tmp, or a non-root caller) runs exactly as before.
+
+real=/usr/local/libexec/dumpcap
+
+out='' prev=''
+for a in "$@"; do
+    if [[ $prev == -w ]]; then
+        out=$a
+    elif [[ $a == -w?* ]]; then
+        out=${a#-w}
+    fi
+    prev=$a
+done
+
+if [[ $EUID -eq 0 && -n $out && $out != - ]]; then
+    if owner=$(stat -c '%u:%g' -- "$(dirname -- "$out")" 2>/dev/null) \
+       && [[ ${owner%%:*} != 0 ]]; then
+        exec setpriv --reuid="${owner%%:*}" --regid="${owner#*:}" --clear-groups \
+            -- "$real" "$@"
+    fi
+fi
+
+exec "$real" "$@"

@@ -6,7 +6,18 @@ fi
 # Docker invocation building blocks
 drun() { docker run --rm "$@"; }
 drunhere() { drun -v "$(pwd):/work" -w /work "$@"; }
-drunit() { drun -it "$@"; }
+# drunit: -i always, so stdin reaches the container, but -t only when stdin AND
+# stdout are terminals. With -t and no terminal (a script, cron, CI, an agent)
+# docker refuses to start; with -t and a piped stdin it refuses too ("input
+# device is not a TTY"), and a redirected stdout gets CRLF line endings. So
+# `semgrep --json ... | jq` and `cat urls | uro | anew all.txt` get plain output,
+# while interactive use (prompts, colors, shells) keeps its TTY. Every *-runit,
+# *-shell and tool wrapper below goes through here.
+drunit() {
+    local t=-i
+    [[ -t 0 && -t 1 ]] && t=-it
+    drun "$t" "$@"
+}
 drunithere() { drunit -v "$(pwd):/work" -w /work "$@"; }
 dshell() { drunit --entrypoint=/bin/bash "$@"; }
 dshellhere() { drunithere --entrypoint=/bin/bash "$@"; }
@@ -82,14 +93,8 @@ bloodhound-run() {
 
 # skw/codeql
 # Runs as your uid, not root, so databases and SARIF written to $(pwd) are yours.
-# TTY follows web-pipe's rule, -i always and -t only when stdin and stdout are
-# both terminals: `codeql ... | jq` gets plain LF output, and a caller with no
-# terminal, where -it makes docker refuse to start, still works.
-_codeql() {
-    local t=-i
-    [[ -t 0 && -t 1 ]] && t=-it
-    drun "$t" -u "$(id -u):$(id -g)" -v "$(pwd):/work" -w /work "$@"
-}
+# TTY follows drunit's rule, so `codeql ... | jq` gets plain LF output.
+_codeql() { drunithere -u "$(id -u):$(id -g)" "$@"; }
 codeql() { _codeql skw/codeql "$@"; }
 codeql-shell() { _codeql --entrypoint /bin/bash skw/codeql "$@"; }
 codeql-scan() {
@@ -159,9 +164,13 @@ jazzer() { drunithere skw/jazzer jazzer "$@"; }
 jazzer-shell() { dshellhere skw/jazzer "$@"; }
 
 # skw/pwn
-pwn-run() { drunhere --network=host skw/pwn "$@"; }
-pwn-runit() { drunithere --network=host skw/pwn "$@"; }
-pwn-shell() { dshellhere --network=host skw/pwn "$@"; }
+# seccomp=unconfined: gdb turns ASLR off for the program it starts with
+# personality(ADDR_NO_RANDOMIZE), which docker's default seccomp profile blocks
+# ("Error disabling address space randomization: Operation not permitted").
+_pwn_opts=(--network=host --security-opt seccomp=unconfined)
+pwn-run() { drunhere "${_pwn_opts[@]}" skw/pwn "$@"; }
+pwn-runit() { drunithere "${_pwn_opts[@]}" skw/pwn "$@"; }
+pwn-shell() { dshellhere "${_pwn_opts[@]}" skw/pwn "$@"; }
 
 # skw/recon
 recon-run() {
@@ -348,8 +357,13 @@ subs2web() {
 # skw/semgrep — the pro-scan flags live here and nowhere else (semgrep's image
 # has no entrypoint script duplicating them).
 semgrep() { drunithere --entrypoint semgrep skw/semgrep "$@"; }
+# Metrics are off unless the caller passes their own --metrics: semgrep rejects
+# the option twice, and --config auto refuses to run with metrics off.
 semgrep-pro-scan() {
-    semgrep scan --pro --dataflow-traces --max-lines-per-finding=0 \
+    local a
+    local -a m=(--metrics=off)
+    for a in "$@"; do [[ $a == --metrics || $a == --metrics=* ]] && m=(); done
+    semgrep scan --pro "${m[@]}" --dataflow-traces --max-lines-per-finding=0 \
         --max-target-bytes=5000000 --time "$@"
 }
 semgrep-shell() { drunithere --entrypoint /bin/bash skw/semgrep "$@"; }
@@ -369,16 +383,10 @@ web-run() { drunhere $(_web_net) skw/web "$@"; }
 web-runit() { drunithere $(_web_net) skw/web "$@"; }
 web-shell() { dshellhere $(_web_net) skw/web "$@"; }
 
-# Tool wrappers go through web-pipe: -i always, so stdin reaches the tool, but
-# -t only when stdin AND stdout are terminals. With -t, a piped stdin makes
-# docker refuse to start ("input device is not a TTY") and a redirected stdout
-# gets CRLF line endings — so `cat urls | uro | anew all.txt` and `gau x > f`
-# need it off, while interactive use (sqlmap prompts, colors) keeps it on.
-web-pipe() {
-    local t=-i
-    [[ -t 0 && -t 1 ]] && t=-it
-    drun "$t" -v "$(pwd):/work" -w /work $(_web_net) skw/web "$@"
-}
+# Tool wrappers go through web-pipe, which is web-runit under another name: the
+# TTY rule in drunit is what lets `cat urls | uro | anew all.txt` and
+# `gau x > f` work, while interactive use (sqlmap prompts, colors) keeps it.
+web-pipe() { web-runit "$@"; }
 
 # content discovery, bypass, injection, params
 ffuf() { web-pipe ffuf "$@"; }
